@@ -46,17 +46,7 @@ func SummaryHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Support API key programmatic auth or standard cookie auth
-	var userID string
-	var ok bool
-	apiKeyAuth, err := APIKeyAuthHelper(r)
-	if err == nil {
-		userID = apiKeyAuth.UserID
-		ok = true
-	} else {
-		userID, ok = middleware.GetUserIDFromContext(r.Context())
-	}
-
+	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
 		utils.ErrorResponse(w, http.StatusUnauthorized, "Unauthorized")
 		return

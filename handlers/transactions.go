@@ -160,6 +160,8 @@ func TransactionsHandler(w http.ResponseWriter, r *http.Request) {
 		if req.Date != "" {
 			if parsed, err := time.Parse(time.RFC3339, req.Date); err == nil {
 				parsedDate = parsed
+			} else if parsed, err := time.Parse("2006-01-02", req.Date); err == nil {
+				parsedDate = parsed
 			}
 		}
 

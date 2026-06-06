@@ -2,13 +2,17 @@ package middleware
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"maybe-finance-backend/database"
 )
 
 type contextKey string
@@ -75,25 +79,60 @@ func GetUserIDFromContext(ctx context.Context) (string, bool) {
 	return userID, ok
 }
 
-// AuthRequired is a middleware that enforces authentication via jwt cookie
+// AuthRequired is a middleware that enforces authentication via jwt cookie, Bearer JWT token, or Bearer API Key.
 func AuthRequired(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// 1. Get auth_token cookie
+		var userID string
+		var authenticated bool
+
+		// 1. Try to get auth_token cookie
 		cookie, err := r.Cookie("auth_token")
-		if err != nil {
-			http.Error(w, `{"error": "Unauthorized: Token missing"}`, http.StatusUnauthorized)
+		if err == nil {
+			claims, err := ParseToken(cookie.Value)
+			if err == nil {
+				userID = claims.UserID
+				authenticated = true
+			}
+		}
+
+		// 2. Try to get Authorization header
+		if !authenticated {
+			authHeader := r.Header.Get("Authorization")
+			if authHeader != "" && len(authHeader) > 7 && strings.HasPrefix(authHeader, "Bearer ") {
+				tokenOrKey := authHeader[7:]
+
+				// Try to parse as JWT first
+				claims, err := ParseToken(tokenOrKey)
+				if err == nil {
+					userID = claims.UserID
+					authenticated = true
+				} else {
+					// If not valid JWT, try to look up as API Key in DB
+					hash := sha256.Sum256([]byte(tokenOrKey))
+					hashHex := hex.EncodeToString(hash[:])
+
+					var apiKey database.ApiKey
+					if err := database.DB.Where("key_hash = ? AND revoked_at IS NULL", hashHex).First(&apiKey).Error; err == nil {
+						userID = apiKey.UserID
+						authenticated = true
+
+						// Update last used time
+						now := time.Now()
+						database.DB.Model(&apiKey).Update("last_used_at", &now)
+					}
+				}
+			}
+		}
+
+		if !authenticated {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"error": "Unauthorized: Authentication required"}`))
 			return
 		}
 
-		// 2. Parse token
-		claims, err := ParseToken(cookie.Value)
-		if err != nil {
-			http.Error(w, `{"error": "Unauthorized: Invalid token"}`, http.StatusUnauthorized)
-			return
-		}
-
-		// 3. Store UserID in context
-		ctx := context.WithValue(r.Context(), UserIDContextKey, claims.UserID)
+		// Store UserID in context
+		ctx := context.WithValue(r.Context(), UserIDContextKey, userID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
