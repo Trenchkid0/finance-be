@@ -10,6 +10,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 	sqlite "github.com/glebarez/sqlite"
+	mysql "gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
@@ -18,13 +19,33 @@ var DB *gorm.DB
 
 // InitDB initializes the database and returns the connection.
 // It runs auto-migrations and seeds default data if the database is empty.
-func InitDB(dbPath string) (*gorm.DB, error) {
+func InitDB(connectionString string) (*gorm.DB, error) {
 	config := &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Info),
 	}
 
 	var dialeg gorm.Dialector
-	dialeg = sqlite.Open(dbPath)
+	
+	// Detect if connectionString is a MySQL connection (contains tcp( or mysql:// or is not a file ending in .db)
+	isMySQL := strings.Contains(connectionString, "@tcp(") || 
+		strings.Contains(connectionString, "mysql://") || 
+		strings.Contains(connectionString, "Host=") || 
+		strings.Contains(connectionString, "charset=")
+
+	if isMySQL {
+		dsn := strings.TrimPrefix(connectionString, "mysql://")
+		// GORM MySQL driver needs parseTime=True to map TIME/DATETIME fields to time.Time in Go
+		if !strings.Contains(dsn, "parseTime=") {
+			if strings.Contains(dsn, "?") {
+				dsn += "&parseTime=True"
+			} else {
+				dsn += "?parseTime=True"
+			}
+		}
+		dialeg = mysql.Open(dsn)
+	} else {
+		dialeg = sqlite.Open(connectionString)
+	}
 
 	db, err := gorm.Open(dialeg, config)
 	if err != nil {

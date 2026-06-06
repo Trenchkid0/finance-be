@@ -90,7 +90,7 @@ func TransactionsHandler(w http.ResponseWriter, r *http.Request) {
 
 		// Count total before pagination
 		var total int64
-		if err := baseQuery.Count(&total).Error; err != nil {
+		if err := baseQuery.Session(&gorm.Session{}).Count(&total).Error; err != nil {
 			utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to count transactions")
 			return
 		}
@@ -101,7 +101,7 @@ func TransactionsHandler(w http.ResponseWriter, r *http.Request) {
 			Sum  float64 `gorm:"column:sum"`
 		}
 		var sumResults []SumResult
-		if err := baseQuery.Select("type, SUM(amount) as sum").Group("type").Scan(&sumResults).Error; err != nil {
+		if err := baseQuery.Session(&gorm.Session{}).Select("type, SUM(amount) as sum").Group("type").Scan(&sumResults).Error; err != nil {
 			utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to aggregate transactions")
 			return
 		}
@@ -131,7 +131,7 @@ func TransactionsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		var transactions []database.Transaction
-		if err := baseQuery.Preload("Category").Preload("Account").Preload("TransferTo").
+		if err := baseQuery.Session(&gorm.Session{}).Preload("Category").Preload("Account").Preload("TransferTo").
 			Order("date desc, created_at desc").Limit(limit).Offset(offset).Find(&transactions).Error; err != nil {
 			utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to retrieve transactions")
 			return
