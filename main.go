@@ -75,9 +75,11 @@ func main() {
 	handler := corsMiddleware(mux, allowedOrigin)
 
 	// 4. Start Server
+	host := getEnv("HOST", "0.0.0.0")
 	port := getEnv("PORT", "8080")
-	fmt.Printf("🚀 Maybe Finance Backend running on http://localhost:%s\n", port)
-	if err := http.ListenAndServe(":"+port, handler); err != nil {
+	bindAddr := host + ":" + port
+	fmt.Printf("🚀 Maybe Finance Backend running on http://%s\n", bindAddr)
+	if err := http.ListenAndServe(bindAddr, handler); err != nil {
 		log.Fatalf("❌ Server failed: %v", err)
 	}
 }
