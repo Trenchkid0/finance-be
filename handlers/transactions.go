@@ -240,6 +240,58 @@ func TransactionsHandler(w http.ResponseWriter, r *http.Request) {
 		database.DB.Preload("Category").Preload("Account").Preload("TransferTo").First(&transaction, "id = ?", transaction.ID)
 		utils.JSONResponse(w, http.StatusCreated, transaction)
 
+	case http.MethodDelete:
+		var req struct {
+			IDs []string `json:"ids"`
+		}
+		if err := utils.ParseJSON(r, &req); err != nil {
+			utils.ErrorResponse(w, http.StatusBadRequest, "Invalid request body")
+			return
+		}
+
+		if len(req.IDs) == 0 {
+			utils.ErrorResponse(w, http.StatusBadRequest, "IDs list cannot be empty")
+			return
+		}
+
+		tx := database.DB.Begin()
+
+		// Fetch all transactions to be deleted to verify ownership and perform balance adjustments
+		var transactions []database.Transaction
+		if err := tx.Where("id IN ? AND user_id = ?", req.IDs, userID).Find(&transactions).Error; err != nil {
+			tx.Rollback()
+			utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to retrieve transactions for deletion")
+			return
+		}
+
+		if len(transactions) == 0 {
+			tx.Rollback()
+			utils.ErrorResponse(w, http.StatusNotFound, "No matching transactions found")
+			return
+		}
+
+		// Adjust balances for each transaction (reversing their effects)
+		for _, transaction := range transactions {
+			if err := adjustBalances(tx, userID, transaction.AccountID, transaction.TransferToID, transaction.Type, transaction.Amount, -1); err != nil {
+				tx.Rollback()
+				utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to update balances during deletion")
+				return
+			}
+		}
+
+		// Perform bulk deletion
+		if err := tx.Delete(&transactions).Error; err != nil {
+			tx.Rollback()
+			utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to delete transactions")
+			return
+		}
+
+		tx.Commit()
+		utils.JSONResponse(w, http.StatusOK, map[string]interface{}{
+			"message": fmt.Sprintf("Successfully deleted %d transactions", len(transactions)),
+			"count":   len(transactions),
+		})
+
 	default:
 		utils.ErrorResponse(w, http.StatusMethodNotAllowed, "Method not allowed")
 	}
