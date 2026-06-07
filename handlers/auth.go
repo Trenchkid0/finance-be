@@ -202,13 +202,8 @@ func LogoutHandler(w http.ResponseWriter, r *http.Request) {
 	utils.JSONResponse(w, http.StatusOK, map[string]string{"message": "Logged out successfully"})
 }
 
-// MeHandler retrieves the profile of the logged-in user
+// MeHandler retrieves or updates the profile of the logged-in user
 func MeHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		utils.ErrorResponse(w, http.StatusMethodNotAllowed, "Method not allowed")
-		return
-	}
-
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
 		utils.ErrorResponse(w, http.StatusUnauthorized, "Unauthorized")
@@ -221,11 +216,40 @@ func MeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	utils.JSONResponse(w, http.StatusOK, map[string]interface{}{
-		"id":    user.ID,
-		"name":  user.Name,
-		"email": user.Email,
-	})
+	switch r.Method {
+	case http.MethodGet:
+		utils.JSONResponse(w, http.StatusOK, map[string]interface{}{
+			"id":             user.ID,
+			"name":           user.Name,
+			"email":          user.Email,
+			"telegramChatId": user.TelegramChatID,
+		})
+
+	case http.MethodPut:
+		var req struct {
+			TelegramChatID string `json:"telegramChatId"`
+		}
+		if err := utils.ParseJSON(r, &req); err != nil {
+			utils.ErrorResponse(w, http.StatusBadRequest, "Invalid request body")
+			return
+		}
+
+		user.TelegramChatID = req.TelegramChatID
+		if err := database.DB.Save(&user).Error; err != nil {
+			utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to update user profile")
+			return
+		}
+
+		utils.JSONResponse(w, http.StatusOK, map[string]interface{}{
+			"id":             user.ID,
+			"name":           user.Name,
+			"email":          user.Email,
+			"telegramChatId": user.TelegramChatID,
+		})
+
+	default:
+		utils.ErrorResponse(w, http.StatusMethodNotAllowed, "Method not allowed")
+	}
 }
 type ApiKeyAuth struct {
 	UserID string

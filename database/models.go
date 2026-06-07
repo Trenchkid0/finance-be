@@ -35,8 +35,9 @@ type User struct {
 	Email         string           `gorm:"uniqueIndex;type:varchar(191)" json:"email"`
 	EmailVerified *time.Time       `json:"emailVerified,omitempty"`
 	Image         string           `gorm:"type:varchar(191)" json:"image"`
-	Password      string           `gorm:"type:varchar(255)" json:"-"` // Hashed, never expose in JSON
-	CreatedAt     time.Time        `json:"createdAt"`
+	Password       string           `gorm:"type:varchar(255)" json:"-"` // Hashed, never expose in JSON
+	TelegramChatID string           `gorm:"type:varchar(191)" json:"telegramChatId,omitempty"`
+	CreatedAt      time.Time        `json:"createdAt"`
 	UpdatedAt     time.Time        `json:"updatedAt"`
 	Accounts      []FinanceAccount `gorm:"foreignKey:UserID;constraint:OnDelete:Cascade" json:"-"`
 	Categories    []Category       `gorm:"foreignKey:UserID;constraint:OnDelete:Cascade" json:"-"`
@@ -115,3 +116,34 @@ type Transaction struct {
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }
+
+// SavingsGoal represents a saving target linked to a user.
+type SavingsGoal struct {
+	ID            string          `gorm:"primaryKey;type:varchar(191)" json:"id"`
+	UserID        string          `gorm:"index;type:varchar(191);not null" json:"userId"`
+	Name          string          `gorm:"type:varchar(191);not null" json:"name"`
+	TargetAmount  float64         `gorm:"type:decimal(15,2);not null" json:"targetAmount"`
+	CurrentAmount float64         `gorm:"type:decimal(15,2);default:0;not null" json:"currentAmount"`
+	TargetDate    time.Time       `gorm:"not null" json:"targetDate"`
+	AccountID     *string         `gorm:"type:varchar(191)" json:"accountId"`
+	Note          string          `gorm:"type:text" json:"note"`
+	Account       *FinanceAccount `gorm:"foreignKey:AccountID" json:"account,omitempty"`
+	CreatedAt     time.Time       `json:"createdAt"`
+	UpdatedAt     time.Time       `json:"updatedAt"`
+}
+
+// RecurringBill represents recurring expenses/subscriptions.
+type RecurringBill struct {
+	ID         string    `gorm:"primaryKey;type:varchar(191)" json:"id"`
+	UserID     string    `gorm:"index;type:varchar(191);not null" json:"userId"`
+	Name       string    `gorm:"type:varchar(191);not null" json:"name"`
+	Amount     float64   `gorm:"type:decimal(15,2);not null" json:"amount"`
+	CategoryID *string   `gorm:"type:varchar(191)" json:"categoryId"`
+	Frequency  string    `gorm:"type:varchar(50);default:'monthly';not null" json:"frequency"` // "weekly", "monthly", "yearly"
+	DayOfMonth int       `gorm:"default:1;not null" json:"dayOfMonth"`
+	Note       string    `gorm:"type:text" json:"note"`
+	Category   *Category `gorm:"foreignKey:CategoryID" json:"category,omitempty"`
+	CreatedAt  time.Time `json:"createdAt"`
+	UpdatedAt  time.Time `json:"updatedAt"`
+}
+

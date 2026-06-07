@@ -43,6 +43,7 @@ func main() {
 	}
 
 	secureRoute("GET /api/auth/me", handlers.MeHandler)
+	secureRoute("PUT /api/auth/me", handlers.MeHandler)
 	secureRoute("GET /api/accounts", handlers.AccountsHandler)
 	secureRoute("POST /api/accounts", handlers.AccountsHandler)
 	secureRoute("GET /api/accounts/{id}", handlers.AccountDetailHandler)
@@ -69,6 +70,18 @@ func main() {
 
 	secureRoute("GET /api/summary", handlers.SummaryHandler)
 	secureRoute("POST /api/ai/scan", handlers.AIScanHandler)
+	secureRoute("GET /api/ai/insights", handlers.InsightsHandler)
+
+	secureRoute("GET /api/goals", handlers.GoalsHandler)
+	secureRoute("POST /api/goals", handlers.GoalsHandler)
+	secureRoute("PUT /api/goals/{id}", handlers.GoalDetailHandler)
+	secureRoute("DELETE /api/goals/{id}", handlers.GoalDetailHandler)
+
+	secureRoute("GET /api/recurring", handlers.RecurringHandler)
+	secureRoute("POST /api/recurring", handlers.RecurringHandler)
+	secureRoute("PUT /api/recurring/{id}", handlers.RecurringDetailHandler)
+	secureRoute("DELETE /api/recurring/{id}", handlers.RecurringDetailHandler)
+	secureRoute("POST /api/recurring/test-telegram", handlers.TestTelegramHandler)
 
 	// Apply CORS
 	allowedOrigin := getEnv("ALLOWED_ORIGIN", "http://localhost:5173")
