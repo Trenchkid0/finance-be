@@ -236,6 +236,10 @@ func TransactionsHandler(w http.ResponseWriter, r *http.Request) {
 
 		tx.Commit()
 
+		// ✅ Invalidate related caches after successful transaction
+		_ = utils.CacheInvalidateUser(userID)
+		fmt.Printf("🔄 Cache invalidated for user: %s (transaction created)\n", userID)
+
 		// Preload relations for response
 		database.DB.Preload("Category").Preload("Account").Preload("TransferTo").First(&transaction, "id = ?", transaction.ID)
 		utils.JSONResponse(w, http.StatusCreated, transaction)
@@ -384,6 +388,10 @@ func TransactionDetailHandler(w http.ResponseWriter, r *http.Request) {
 
 		tx.Commit()
 
+		// ✅ Invalidate related caches after successful update
+		_ = utils.CacheInvalidateUser(userID)
+		fmt.Printf("🔄 Cache invalidated for user: %s (transaction updated)\n", userID)
+
 		// Preload relations for response
 		database.DB.Preload("Category").Preload("Account").Preload("TransferTo").First(&transaction, "id = ?", transaction.ID)
 		utils.JSONResponse(w, http.StatusOK, transaction)
@@ -405,6 +413,11 @@ func TransactionDetailHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		tx.Commit()
+
+		// ✅ Invalidate related caches after successful deletion
+		_ = utils.CacheInvalidateUser(userID)
+		fmt.Printf("🔄 Cache invalidated for user: %s (transaction deleted)\n", userID)
+		
 		utils.JSONResponse(w, http.StatusOK, map[string]string{"message": "Transaction deleted successfully"})
 
 	default:

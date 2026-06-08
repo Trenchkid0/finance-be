@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"math"
 	"net/http"
 	"sort"
@@ -39,7 +40,7 @@ type DashboardSummaryResponse struct {
 	Recent           []database.Transaction `json:"recent"`
 }
 
-// SummaryHandler aggregates data for the Dashboard page
+// SummaryHandler aggregates data for the Dashboard page with Redis caching
 func SummaryHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		utils.ErrorResponse(w, http.StatusMethodNotAllowed, "Method not allowed")
@@ -60,6 +61,20 @@ func SummaryHandler(w http.ResponseWriter, r *http.Request) {
 	if cashflowPeriod == "" {
 		cashflowPeriod = "30d"
 	}
+
+	// ✅ Try Redis cache first (3 minutes TTL)
+	cacheKey := utils.BuildCacheKey("summary", userID, period, cashflowPeriod)
+	var cachedResponse DashboardSummaryResponse
+	
+	if err := utils.CacheGet(cacheKey, &cachedResponse); err == nil {
+		// Cache HIT - return immediately
+		fmt.Printf("💾 Cache HIT: %s\n", cacheKey)
+		utils.JSONResponse(w, http.StatusOK, cachedResponse)
+		return
+	}
+	
+	// Cache MISS - fetch from database
+	fmt.Printf("❌ Cache MISS: %s - fetching from DB\n", cacheKey)
 
 	// 1. Fetch active accounts
 	var accounts []database.FinanceAccount
@@ -95,14 +110,20 @@ func SummaryHandler(w http.ResponseWriter, r *http.Request) {
 		Limit(8).
 		Find(&recent)
 
-	utils.JSONResponse(w, http.StatusOK, DashboardSummaryResponse{
+	response := DashboardSummaryResponse{
 		NetWorthCurrent:  netWorthCurrent,
 		NetWorthPrevious: netWorthPrevious,
 		Period:           period,
 		NetWorthSeries:   netWorthSeries,
 		Cashflow:         cashflow,
 		Recent:           recent,
-	})
+	}
+
+	// ✅ Store in cache for 3 minutes
+	_ = utils.CacheSet(cacheKey, response, 3*time.Minute)
+	fmt.Printf("📦 Cached: %s (3 min TTL)\n", cacheKey)
+
+	utils.JSONResponse(w, http.StatusOK, response)
 }
 
 // Period boundaries converter
