@@ -11,6 +11,7 @@ import (
 	"maybe-finance-backend/database"
 	"maybe-finance-backend/handlers"
 	"maybe-finance-backend/middleware"
+	"maybe-finance-backend/utils"
 )
 
 func main() {
@@ -29,7 +30,11 @@ func main() {
 	}
 	log.Printf("📂 Database loaded from: %s", dbPath)
 
-	// 3. Setup router
+	// 3. Initialize Redis cache
+	utils.InitRedis()
+	defer utils.CloseRedis()
+
+	// 4. Setup router
 	mux := http.NewServeMux()
 
 	// Public Routes
@@ -87,7 +92,7 @@ func main() {
 	allowedOrigin := getEnv("ALLOWED_ORIGIN", "http://localhost:5173")
 	handler := corsMiddleware(mux, allowedOrigin)
 
-	// 4. Start Server
+	// 5. Start Server
 	host := getEnv("HOST", "0.0.0.0")
 	port := getEnv("PORT", "8080")
 	bindAddr := host + ":" + port
