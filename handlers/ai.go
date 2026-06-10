@@ -24,6 +24,7 @@ type AIScanCandidate struct {
 	Amount       float64                  `json:"amount"`
 	Date         *string                  `json:"date"` // YYYY-MM-DD
 	Description  *string                  `json:"description"`
+	Note         *string                  `json:"note"`
 	AccountID    *string                  `json:"accountId"`
 	TransferToID *string                  `json:"transferToId"`
 	CategoryID   *string                  `json:"categoryId"`
@@ -132,6 +133,7 @@ func AIScanHandler(w http.ResponseWriter, r *http.Request) {
   "amount": number (whole rupiah, tanpa pemisah),
   "date": "YYYY-MM-DD" | null,
   "description": "string singkat <= 80 char" | null,
+  "note": "catatan tambahan seperti nomor receipt, detail merchant, atau deskripsi barang jika ada" | null,
   "accountId": "salah satu id dari daftar akun" | null,
   "transferToId": "id akun tujuan untuk transfer, null untuk income/expense",
   "categoryId": "id kategori income/expense yang cocok, null untuk transfer atau jika tidak yakin",
@@ -159,6 +161,7 @@ Aturan:
 - Pilih accountId paling cocok berdasarkan nama/jenis (BCA, GoPay, OVO, Mandiri, Tunai, dll).
 - Untuk income/expense, pilih categoryId yang relevan; isi null kalau tidak ada yang cocok.
 - "date" harus format YYYY-MM-DD; kalau teks bilang "kemarin", "hari ini", dll., hitung dari hari ini.
+- "note" diisi dengan catatan pendukung seperti nomor invoice, detail transaksi, barang belanjaan, atau nama toko lengkap.
 - Jika ragu pada salah satu field, isi null daripada menebak.
 - "confidence" 0..1 — jujur. Kalau teks ambigu, set < 0.5.
 
@@ -176,6 +179,7 @@ Teks transaksi:
 		Amount       interface{} `json:"amount"`
 		Date         *string     `json:"date"`
 		Description  *string     `json:"description"`
+		Note         *string     `json:"note"`
 		AccountID    *string     `json:"accountId"`
 		TransferToID *string     `json:"transferToId"`
 		CategoryID   *string     `json:"categoryId"`
@@ -217,6 +221,7 @@ func sanitizeCandidate(
 		Amount       interface{} `json:"amount"`
 		Date         *string     `json:"date"`
 		Description  *string     `json:"description"`
+		Note         *string     `json:"note"`
 		AccountID    *string     `json:"accountId"`
 		TransferToID *string     `json:"transferToId"`
 		CategoryID   *string     `json:"categoryId"`
@@ -273,6 +278,15 @@ func sanitizeCandidate(
 				trimmed = trimmed[:80]
 			}
 			description = &trimmed
+		}
+	}
+
+	// Note
+	var note *string
+	if raw.Note != nil {
+		trimmed := strings.TrimSpace(*raw.Note)
+		if len(trimmed) > 0 {
+			note = &trimmed
 		}
 	}
 
@@ -339,6 +353,7 @@ func sanitizeCandidate(
 		Amount:       amount,
 		Date:         dateStr,
 		Description:  description,
+		Note:         note,
 		AccountID:    accountID,
 		TransferToID: transferToID,
 		CategoryID:   categoryID,

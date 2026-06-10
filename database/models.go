@@ -97,16 +97,17 @@ type Budget struct {
 
 // Transaction represents a single income, expense, or transfer.
 type Transaction struct {
-	ID           string          `gorm:"primaryKey;type:varchar(191)" json:"id"`
-	UserID       string          `gorm:"index;type:varchar(191);not null" json:"userId"`
-	AccountID    string          `gorm:"index;type:varchar(191);not null" json:"accountId"`
-	CategoryID   *string         `gorm:"index;type:varchar(191)" json:"categoryId"` // Nullable (especially for transfers)
-	Type         TransactionType `gorm:"type:varchar(50);not null" json:"type"`
-	Amount       float64         `gorm:"type:decimal(15,2);not null" json:"amount"`
-	Description  string          `gorm:"type:varchar(191)" json:"description"`
-	Note         string          `gorm:"type:text" json:"note"`
-	Date         time.Time       `gorm:"index;not null" json:"date"`
-	TransferToID *string         `gorm:"type:varchar(191)" json:"transferToId"` // ID of target account if transfer
+	ID               string          `gorm:"primaryKey;type:varchar(191)" json:"id"`
+	UserID           string          `gorm:"index;type:varchar(191);not null" json:"userId"`
+	AccountID        string          `gorm:"index;type:varchar(191);not null" json:"accountId"`
+	CategoryID       *string         `gorm:"index;type:varchar(191)" json:"categoryId"` // Nullable (especially for transfers)
+	Type             TransactionType `gorm:"type:varchar(50);not null" json:"type"`
+	Amount           float64         `gorm:"type:decimal(15,2);not null" json:"amount"`
+	Description      string          `gorm:"type:varchar(191)" json:"description"`
+	Note             string          `gorm:"type:text" json:"note"`
+	Date             time.Time       `gorm:"index;not null" json:"date"`
+	TransferToID     *string         `gorm:"type:varchar(191)" json:"transferToId"` // ID of target account if transfer
+	ReceiptImageURL  *string         `gorm:"type:text" json:"receiptImageUrl"`       // URL foto struk/receipt
 
 	// Relations (only populated when Preloaded, GORM handles them)
 	Category   *Category       `gorm:"foreignKey:CategoryID" json:"category,omitempty"`

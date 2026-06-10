@@ -60,7 +60,9 @@ func main() {
 
 	secureRoute("GET /api/transactions", handlers.TransactionsHandler)
 	secureRoute("POST /api/transactions", handlers.TransactionsHandler)
+	secureRoute("DELETE /api/transactions", handlers.TransactionsHandler)
 	secureRoute("GET /api/transactions/export", handlers.ExportTransactionsHandler)
+	secureRoute("POST /api/transactions/import", handlers.ImportTransactionsHandler)
 	secureRoute("GET /api/transactions/{id}", handlers.TransactionDetailHandler)
 	secureRoute("PUT /api/transactions/{id}", handlers.TransactionDetailHandler)
 	secureRoute("DELETE /api/transactions/{id}", handlers.TransactionDetailHandler)
@@ -87,6 +89,16 @@ func main() {
 	secureRoute("PUT /api/recurring/{id}", handlers.RecurringDetailHandler)
 	secureRoute("DELETE /api/recurring/{id}", handlers.RecurringDetailHandler)
 	secureRoute("POST /api/recurring/test-telegram", handlers.TestTelegramHandler)
+
+	// Upload endpoint
+	secureRoute("POST /api/upload/receipt", handlers.UploadReceiptHandler)
+
+	// Telegram Bot Webhook (public - called by Telegram servers)
+	mux.HandleFunc("POST /webhook/telegram", handlers.TelegramWebhookHandler)
+
+	// Serve uploaded files
+	uploadsFS := http.FileServer(http.Dir("uploads"))
+	mux.Handle("GET /uploads/", http.StripPrefix("/uploads", uploadsFS))
 
 	// Apply CORS
 	allowedOrigin := getEnv("ALLOWED_ORIGIN", "http://localhost:5173")
