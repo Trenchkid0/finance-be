@@ -120,11 +120,15 @@ func UploadReceiptHandler(w http.ResponseWriter, r *http.Request) {
 	originalSize := len(fileBytes)
 	compressionRatio := float64(originalSize-int(encodedSize)) / float64(originalSize) * 100
 
-	// Return URL
-	baseURL := os.Getenv("BASE_URL")
-	if baseURL == "" {
-		baseURL = "http://localhost:8080"
+	// Return URL (dynamically built from request host/scheme)
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
 	}
+	if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
+		scheme = proto
+	}
+	baseURL := fmt.Sprintf("%s://%s", scheme, r.Host)
 	imageURL := fmt.Sprintf("%s/uploads/receipts/%s", baseURL, filename)
 
 	utils.JSONResponse(w, http.StatusOK, map[string]interface{}{

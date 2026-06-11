@@ -97,7 +97,7 @@ type Budget struct {
 
 // Transaction represents a single income, expense, or transfer.
 type Transaction struct {
-	ID               string          `gorm:"primaryKey;type:varchar(191)" json:"id"`
+	ID               uint            `gorm:"primaryKey;autoIncrement" json:"id"`
 	UserID           string          `gorm:"index;type:varchar(191);not null" json:"userId"`
 	AccountID        string          `gorm:"index;type:varchar(191);not null" json:"accountId"`
 	CategoryID       *string         `gorm:"index;type:varchar(191)" json:"categoryId"` // Nullable (especially for transfers)

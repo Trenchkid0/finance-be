@@ -159,7 +159,6 @@ func handlePhotoUpload(msg *TelegramMessage, user *database.User) {
 
 	// Create transaction
 	transaction := database.Transaction{
-		ID:              generateTransactionID(),
 		UserID:          user.ID,
 		AccountID:       account.ID,
 		CategoryID:      categoryID,
@@ -219,7 +218,6 @@ func handleTextTransaction(msg *TelegramMessage, user *database.User) {
 
 	// Create transaction
 	transaction := database.Transaction{
-		ID:          generateTransactionID(),
 		UserID:      user.ID,
 		AccountID:   account.ID,
 		Type:        database.TransactionTypeExpense,

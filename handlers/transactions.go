@@ -16,6 +16,24 @@ import (
 	"maybe-finance-backend/utils"
 )
 
+func resolveReceiptURL(r *http.Request, url *string) *string {
+	if url == nil || *url == "" {
+		return url
+	}
+	if strings.HasPrefix(*url, "/uploads/") {
+		scheme := "http"
+		if r.TLS != nil {
+			scheme = "https"
+		}
+		if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
+			scheme = proto
+		}
+		fullURL := fmt.Sprintf("%s://%s%s", scheme, r.Host, *url)
+		return &fullURL
+	}
+	return url
+}
+
 type TransactionRequest struct {
 	AccountID       string                   `json:"accountId"`
 	CategoryID      *string                  `json:"categoryId"`
@@ -139,6 +157,10 @@ func TransactionsHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		for i := range transactions {
+			transactions[i].ReceiptImageURL = resolveReceiptURL(r, transactions[i].ReceiptImageURL)
+		}
+
 		utils.JSONResponse(w, http.StatusOK, TransactionsListResponse{
 			Transactions: transactions,
 			Total:        total,
@@ -215,8 +237,18 @@ func TransactionsHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		// Sanitize receipt image URL to store relative path
+		var receiptURL *string
+		if req.ReceiptImageURL != nil && *req.ReceiptImageURL != "" {
+			if idx := strings.Index(*req.ReceiptImageURL, "/uploads/"); idx != -1 {
+				rel := (*req.ReceiptImageURL)[idx:]
+				receiptURL = &rel
+			} else {
+				receiptURL = req.ReceiptImageURL
+			}
+		}
+
 		transaction := database.Transaction{
-			ID:              uuid.New().String(),
 			UserID:          userID,
 			AccountID:       req.AccountID,
 			CategoryID:      req.CategoryID,
@@ -226,7 +258,7 @@ func TransactionsHandler(w http.ResponseWriter, r *http.Request) {
 			Note:            req.Note,
 			Date:            parsedDate,
 			TransferToID:    req.TransferToID,
-			ReceiptImageURL: req.ReceiptImageURL,
+			ReceiptImageURL: receiptURL,
 			CreatedAt:       time.Now(),
 			UpdatedAt:       time.Now(),
 		}
@@ -245,6 +277,7 @@ func TransactionsHandler(w http.ResponseWriter, r *http.Request) {
 
 		// Preload relations for response
 		database.DB.Preload("Category").Preload("Account").Preload("TransferTo").First(&transaction, "id = ?", transaction.ID)
+		transaction.ReceiptImageURL = resolveReceiptURL(r, transaction.ReceiptImageURL)
 		utils.JSONResponse(w, http.StatusCreated, transaction)
 
 	case http.MethodDelete:
@@ -382,7 +415,16 @@ func TransactionDetailHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if req.ReceiptImageURL != nil {
-			transaction.ReceiptImageURL = req.ReceiptImageURL
+			var receiptURL *string
+			if *req.ReceiptImageURL != "" {
+				if idx := strings.Index(*req.ReceiptImageURL, "/uploads/"); idx != -1 {
+					rel := (*req.ReceiptImageURL)[idx:]
+					receiptURL = &rel
+				} else {
+					receiptURL = req.ReceiptImageURL
+				}
+			}
+			transaction.ReceiptImageURL = receiptURL
 		}
 		transaction.UpdatedAt = time.Now()
 
@@ -400,6 +442,7 @@ func TransactionDetailHandler(w http.ResponseWriter, r *http.Request) {
 
 		// Preload relations for response
 		database.DB.Preload("Category").Preload("Account").Preload("TransferTo").First(&transaction, "id = ?", transaction.ID)
+		transaction.ReceiptImageURL = resolveReceiptURL(r, transaction.ReceiptImageURL)
 		utils.JSONResponse(w, http.StatusOK, transaction)
 
 	case http.MethodDelete:
@@ -676,7 +719,6 @@ func ImportTransactionsHandler(w http.ResponseWriter, r *http.Request) {
 
 		// Create transaction
 		transaction := database.Transaction{
-			ID:           uuid.New().String(),
 			UserID:       userID,
 			AccountID:    sourceAcc.ID,
 			CategoryID:   categoryID,
