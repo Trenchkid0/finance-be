@@ -231,7 +231,6 @@ func SeedDemoData(db *gorm.DB) error {
 		payDate := time.Date(now.Year(), now.Month()-time.Month(offset), 1, 9, 0, 0, 0, now.Location())
 		if payDate.Before(now) {
 			salaryTx := Transaction{
-				ID:          fmt.Sprintf("salary-tx-%d", offset),
 				UserID:      demoUser.ID,
 				AccountID:   accounts[0].ID, // BCA Tahapan
 				CategoryID:  &salaryCategory.ID,
@@ -300,7 +299,6 @@ func SeedDemoData(db *gorm.DB) error {
 			txDate = time.Date(txDate.Year(), txDate.Month(), txDate.Day(), 8+i*4, r.Intn(60), 0, 0, txDate.Location())
 
 			expenseTx := Transaction{
-				ID:          fmt.Sprintf("expense-tx-%d", txCount),
 				UserID:      demoUser.ID,
 				AccountID:   account.ID,
 				CategoryID:  &cat.ID,
