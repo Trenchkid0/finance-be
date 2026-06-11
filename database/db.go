@@ -69,11 +69,13 @@ func InitDB(connectionString string) (*gorm.DB, error) {
 
 	DB = db
 
-	// Check if categories are empty. If so, seed defaults.
+	// Check if categories are empty or demo user is missing. If so, seed defaults.
 	var count int64
 	db.Model(&Category{}).Count(&count)
-	if count == 0 {
-		fmt.Println("🌱 Database is empty. Seeding default data...")
+	var userCount int64
+	db.Model(&User{}).Where("email = ?", "demo@maybe.local").Count(&userCount)
+	if count == 0 || userCount == 0 {
+		fmt.Println("🌱 Database is empty or demo user is missing. Seeding default data...")
 		err = SeedDemoData(db)
 		if err != nil {
 			fmt.Printf("⚠️ Seeding failed: %v\n", err)
@@ -154,11 +156,11 @@ func SeedDemoData(db *gorm.DB) error {
 
 	// 2. Seed Demo User
 	demoEmail := "demo@maybe.local"
-	var existing User
-	if err := db.Where("email = ?", demoEmail).First(&existing).Error; err == nil {
-		// Clean up old demo user and cascading relations
-		db.Delete(&existing)
-	}
+	// Clean up old demo user and related structures explicitly to prevent duplicate key constraint errors
+	db.Where("user_id = ? OR id = ?", "demo-user-id", "demo-api-key-id").Delete(&ApiKey{})
+	db.Where("user_id = ?", "demo-user-id").Delete(&Transaction{})
+	db.Where("user_id = ? OR id LIKE ?", "demo-user-id", "demo-acc-%").Delete(&FinanceAccount{})
+	db.Where("email = ? OR id = ?", demoEmail, "demo-user-id").Delete(&User{})
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte("password123"), bcrypt.DefaultCost)
 	if err != nil {
