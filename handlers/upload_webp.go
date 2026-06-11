@@ -8,11 +8,14 @@ import (
 	"os"
 
 	"github.com/bep/gowebp/libwebp"
+	"github.com/bep/gowebp/libwebp/webpoptions"
 )
 
 // encodeImage encodes the image to WebP format (non-Windows platforms)
 func encodeImage(outputFile *os.File, img image.Image) (int64, error) {
-	err := webp.Encode(outputFile, img, &webp.Options{Quality: WebPQuality})
+	err := libwebp.Encode(outputFile, img, webpoptions.EncodingOptions{
+		Quality: WebPQuality,
+	})
 	if err != nil {
 		return 0, err
 	}
