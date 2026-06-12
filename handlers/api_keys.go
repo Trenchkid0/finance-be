@@ -51,8 +51,6 @@ func ApiKeysHandler(w http.ResponseWriter, r *http.Request) {
 		plainSecret := "mb_" + uuid.New().String() + uuid.New().String()
 		plainSecret = plainSecret[:64] // Keep it standard length (64 chars)
 
-		// Prefix is first 12 chars
-		prefix := plainSecret[:12]
 
 		// Hash with SHA-256
 		hash := sha256.Sum256([]byte(plainSecret))
@@ -62,7 +60,7 @@ func ApiKeysHandler(w http.ResponseWriter, r *http.Request) {
 			ID:        uuid.New().String(),
 			UserID:    userID,
 			Name:      req.Name,
-			KeyPrefix: prefix,
+			KeyPrefix: plainSecret,
 			KeyHash:   hashHex,
 			CreatedAt: time.Now(),
 		}

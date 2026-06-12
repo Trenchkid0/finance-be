@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/crypto/bcrypt"
 	sqlite "github.com/glebarez/sqlite"
+	"golang.org/x/crypto/bcrypt"
 	mysql "gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -65,6 +65,15 @@ func InitDB(connectionString string) (*gorm.DB, error) {
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to migrate database: %w", err)
+	}
+
+	// Manually alter key_prefix column to varchar(255) to support storing the full key
+	if db.Dialector.Name() == "mysql" {
+		if err := db.Exec("ALTER TABLE api_keys MODIFY COLUMN key_prefix VARCHAR(255) NOT NULL").Error; err != nil {
+			fmt.Printf("⚠️ Failed to modify key_prefix column to VARCHAR(255): %v\n", err)
+		} else {
+			fmt.Println("🚀 Successfully modified key_prefix column to VARCHAR(255)")
+		}
 	}
 
 	DB = db

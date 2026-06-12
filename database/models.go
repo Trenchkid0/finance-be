@@ -78,7 +78,7 @@ type ApiKey struct {
 	ID         string     `gorm:"primaryKey;type:varchar(191)" json:"id"`
 	UserID     string     `gorm:"index;type:varchar(191);not null" json:"userId"`
 	Name       string     `gorm:"type:varchar(191);not null" json:"name"`
-	KeyPrefix  string     `gorm:"type:varchar(12);not null" json:"keyPrefix"`
+	KeyPrefix  string     `gorm:"type:varchar(255);not null" json:"keyPrefix"`
 	KeyHash    string     `gorm:"uniqueIndex;type:varchar(64);not null" json:"-"` // SHA-256 hash
 	LastUsedAt *time.Time `json:"lastUsedAt,omitempty"`
 	RevokedAt  *time.Time `json:"revokedAt,omitempty"`
