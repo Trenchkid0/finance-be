@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -17,6 +18,8 @@ type RecurringBillRequest struct {
 	CategoryID *string `json:"categoryId"`
 	Frequency  string  `json:"frequency"` // "weekly", "monthly", "yearly"
 	DayOfMonth int     `json:"dayOfMonth"`
+	AutoPay    bool    `json:"autoPay"`
+	AccountID  *string `json:"accountId"`
 	Note       string  `json:"note"`
 }
 
@@ -31,7 +34,7 @@ func RecurringHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		bills := make([]database.RecurringBill, 0)
-		if err := database.DB.Preload("Category").Where("user_id = ?", userID).Find(&bills).Error; err != nil {
+		if err := database.DB.Preload("Category").Preload("Account").Where("user_id = ?", userID).Find(&bills).Error; err != nil {
 			utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to retrieve recurring bills")
 			return
 		}
@@ -67,6 +70,8 @@ func RecurringHandler(w http.ResponseWriter, r *http.Request) {
 			CategoryID: req.CategoryID,
 			Frequency:  freq,
 			DayOfMonth: day,
+			AutoPay:    req.AutoPay,
+			AccountID:  req.AccountID,
 			Note:       req.Note,
 			CreatedAt:  time.Now(),
 			UpdatedAt:  time.Now(),
@@ -77,10 +82,8 @@ func RecurringHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Preload Category if set
-		if bill.CategoryID != nil && *bill.CategoryID != "" {
-			database.DB.Preload("Category").First(&bill, "id = ?", bill.ID)
-		}
+		// Preload Category & Account
+		database.DB.Preload("Category").Preload("Account").First(&bill, "id = ?", bill.ID)
 
 		utils.JSONResponse(w, http.StatusCreated, bill)
 
@@ -132,6 +135,8 @@ func RecurringDetailHandler(w http.ResponseWriter, r *http.Request) {
 		bill.CategoryID = req.CategoryID
 		bill.Frequency = req.Frequency
 		bill.DayOfMonth = day
+		bill.AutoPay = req.AutoPay
+		bill.AccountID = req.AccountID
 		bill.Note = req.Note
 		bill.UpdatedAt = time.Now()
 
@@ -140,12 +145,8 @@ func RecurringDetailHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Preload Category if set
-		if bill.CategoryID != nil && *bill.CategoryID != "" {
-			database.DB.Preload("Category").First(&bill, "id = ?", bill.ID)
-		} else {
-			bill.Category = nil
-		}
+		// Preload relations
+		database.DB.Preload("Category").Preload("Account").First(&bill, "id = ?", bill.ID)
 
 		utils.JSONResponse(w, http.StatusOK, bill)
 
@@ -159,4 +160,88 @@ func RecurringDetailHandler(w http.ResponseWriter, r *http.Request) {
 	default:
 		utils.ErrorResponse(w, http.StatusMethodNotAllowed, "Method not allowed")
 	}
+}
+
+// RecurringPayHandler records a transaction payment for a recurring bill
+func RecurringPayHandler(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	if !ok {
+		utils.ErrorResponse(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		utils.ErrorResponse(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	billID := r.PathValue("id")
+	if billID == "" {
+		utils.ErrorResponse(w, http.StatusBadRequest, "Missing bill ID")
+		return
+	}
+
+	var bill database.RecurringBill
+	if err := database.DB.Where("id = ? AND user_id = ?", billID, userID).First(&bill).Error; err != nil {
+		utils.ErrorResponse(w, http.StatusNotFound, "Recurring bill not found")
+		return
+	}
+
+	if bill.AccountID == nil || *bill.AccountID == "" {
+		utils.ErrorResponse(w, http.StatusBadRequest, "Tagihan ini belum dikaitkan dengan akun pembayaran (rekening/dompet)")
+		return
+	}
+
+	tx := database.DB.Begin()
+
+	// 1. Deduct balance
+	if err := adjustBalances(tx, userID, *bill.AccountID, nil, database.TransactionTypeExpense, bill.Amount, 1); err != nil {
+		tx.Rollback()
+		utils.ErrorResponse(w, http.StatusInternalServerError, "Gagal memotong saldo rekening")
+		return
+	}
+
+	// 2. Create transaction
+	transaction := database.Transaction{
+		UserID:      userID,
+		AccountID:   *bill.AccountID,
+		CategoryID:  bill.CategoryID,
+		Type:        database.TransactionTypeExpense,
+		Amount:      bill.Amount,
+		Description: fmt.Sprintf("Bayar Tagihan: %s", bill.Name),
+		Note:        fmt.Sprintf("Pembayaran tagihan rutin '%s' secara manual.", bill.Name),
+		Date:        time.Now(),
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	}
+
+	if err := tx.Create(&transaction).Error; err != nil {
+		tx.Rollback()
+		utils.ErrorResponse(w, http.StatusInternalServerError, "Gagal mencatat transaksi pembayaran")
+		return
+	}
+
+	// 3. Update LastPaidAt on bill
+	now := time.Now()
+	bill.LastPaidAt = &now
+	if err := tx.Save(&bill).Error; err != nil {
+		tx.Rollback()
+		utils.ErrorResponse(w, http.StatusInternalServerError, "Gagal memperbarui status tagihan")
+		return
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		tx.Rollback()
+		utils.ErrorResponse(w, http.StatusInternalServerError, "Gagal menyimpan perubahan transaksi")
+		return
+	}
+
+	// Invalidate cache
+	_ = utils.CacheInvalidateUser(userID)
+
+	utils.JSONResponse(w, http.StatusOK, map[string]interface{}{
+		"message":     "Pembayaran tagihan berhasil dicatat",
+		"transaction": transaction,
+		"bill":        bill,
+	})
 }

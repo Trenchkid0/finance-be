@@ -116,9 +116,11 @@ func AuthRequired(next http.Handler) http.Handler {
 						userID = apiKey.UserID
 						authenticated = true
 
-						// Update last used time
-						now := time.Now()
-						database.DB.Model(&apiKey).Update("last_used_at", &now)
+						// Update last used time asynchronously to prevent blocking the request
+						go func(keyID string) {
+							now := time.Now()
+							database.DB.Model(&database.ApiKey{}).Where("id = ?", keyID).Update("last_used_at", &now)
+						}(apiKey.ID)
 					}
 				}
 			}

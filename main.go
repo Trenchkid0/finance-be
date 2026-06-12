@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"maybe-finance-backend/database"
 	"maybe-finance-backend/handlers"
@@ -33,6 +34,9 @@ func main() {
 	// 3. Initialize Redis cache
 	utils.InitRedis()
 	defer utils.CloseRedis()
+
+	// Start Auto-Pay background scheduler
+	startAutoPayScheduler()
 
 	// 4. Setup router
 	mux := http.NewServeMux()
@@ -88,10 +92,17 @@ func main() {
 	secureRoute("POST /api/recurring", handlers.RecurringHandler)
 	secureRoute("PUT /api/recurring/{id}", handlers.RecurringDetailHandler)
 	secureRoute("DELETE /api/recurring/{id}", handlers.RecurringDetailHandler)
+	secureRoute("POST /api/recurring/{id}/pay", handlers.RecurringPayHandler)
 	secureRoute("POST /api/recurring/test-telegram", handlers.TestTelegramHandler)
 
 	// Upload endpoint
 	secureRoute("POST /api/upload/receipt", handlers.UploadReceiptHandler)
+
+	// Investment Portfolio endpoints
+	secureRoute("GET /api/investments", handlers.InvestmentsHandler)
+	secureRoute("POST /api/investments/buy", handlers.BuyAssetHandler)
+	secureRoute("POST /api/investments/sell", handlers.SellAssetHandler)
+	secureRoute("POST /api/investments/update-price", handlers.UpdatePriceHandler)
 
 	// Telegram Bot Webhook (public - called by Telegram servers)
 	mux.HandleFunc("POST /webhook/telegram", handlers.TelegramWebhookHandler)
@@ -167,4 +178,115 @@ func corsMiddleware(next http.Handler, allowedOrigin string) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+func startAutoPayScheduler() {
+	log.Println("⏰ Auto-Pay background scheduler started")
+	
+	// Check immediately on startup, then every 4 hours
+	go checkAutoPayBills()
+	
+	ticker := time.NewTicker(4 * time.Hour)
+	go func() {
+		for range ticker.C {
+			checkAutoPayBills()
+		}
+	}()
+}
+
+func checkAutoPayBills() {
+	db := database.DB
+	if db == nil {
+		return
+	}
+
+	var bills []database.RecurringBill
+	err := db.Where("auto_pay = ? AND account_id IS NOT NULL AND account_id != ''", true).Find(&bills).Error
+	if err != nil {
+		log.Printf("⚠️ [AutoPay] Failed to fetch auto-pay bills: %v", err)
+		return
+	}
+
+	now := time.Now()
+	todayDay := now.Day()
+	
+	// Helper to check if today is the last day of the month
+	isLastDayOfMonth := func(t time.Time) bool {
+		return t.AddDate(0, 0, 1).Day() == 1
+	}
+
+	for _, bill := range bills {
+		// 1. Check if already paid this month
+		if bill.LastPaidAt != nil && bill.LastPaidAt.Year() == now.Year() && bill.LastPaidAt.Month() == now.Month() {
+			continue
+		}
+
+		// 2. Check if today is the due day
+		isDue := false
+		if bill.DayOfMonth == todayDay {
+			isDue = true
+		} else if isLastDayOfMonth(now) && bill.DayOfMonth > todayDay {
+			isDue = true
+		}
+
+		if !isDue {
+			continue
+		}
+
+		// 3. Process payment in transaction
+		tx := db.Begin()
+		
+		// Get account
+		var acc database.FinanceAccount
+		if err := tx.Where("id = ? AND user_id = ?", *bill.AccountID, bill.UserID).First(&acc).Error; err != nil {
+			tx.Rollback()
+			log.Printf("❌ [AutoPay] Account not found for bill '%s': %v", bill.Name, err)
+			continue
+		}
+
+		newBalance := acc.Balance - bill.Amount
+		if err := tx.Model(&acc).Update("balance", newBalance).Error; err != nil {
+			tx.Rollback()
+			log.Printf("❌ [AutoPay] Failed to update balance for bill '%s': %v", bill.Name, err)
+			continue
+		}
+
+		// Create Transaction
+		transaction := database.Transaction{
+			UserID:      bill.UserID,
+			AccountID:   *bill.AccountID,
+			CategoryID:  bill.CategoryID,
+			Type:        database.TransactionTypeExpense,
+			Amount:      bill.Amount,
+			Description: fmt.Sprintf("Auto-Pay: %s", bill.Name),
+			Note:        fmt.Sprintf("Pembayaran tagihan rutin '%s' secara otomatis oleh sistem.", bill.Name),
+			Date:        now,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		}
+
+		if err := tx.Create(&transaction).Error; err != nil {
+			tx.Rollback()
+			log.Printf("❌ [AutoPay] Failed to create transaction for bill '%s': %v", bill.Name, err)
+			continue
+		}
+
+		// Update LastPaidAt
+		bill.LastPaidAt = &now
+		if err := tx.Save(&bill).Error; err != nil {
+			tx.Rollback()
+			log.Printf("❌ [AutoPay] Failed to update bill paid date for '%s': %v", bill.Name, err)
+			continue
+		}
+
+		if err := tx.Commit().Error; err != nil {
+			tx.Rollback()
+			log.Printf("❌ [AutoPay] Failed to commit transaction for bill '%s': %v", bill.Name, err)
+			continue
+		}
+
+		// Invalidate cache
+		_ = utils.CacheInvalidateUser(bill.UserID)
+		log.Printf("⏰ [AutoPay] Successfully paid bill '%s' (Rp %.0f) for user: %s", bill.Name, bill.Amount, bill.UserID)
+	}
 }
