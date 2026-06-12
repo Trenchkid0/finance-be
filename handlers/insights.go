@@ -44,6 +44,13 @@ func InsightsHandler(w http.ResponseWriter, r *http.Request) {
 		lang = "id"
 	}
 
+	cacheKey := utils.BuildCacheKey("insights", userID, lang)
+	var cachedResponse InsightsResponse
+	if err := utils.CacheGet(cacheKey, &cachedResponse); err == nil {
+		utils.JSONResponse(w, http.StatusOK, cachedResponse)
+		return
+	}
+
 	// 1. Fetch user accounts
 	var accounts []database.FinanceAccount
 	if err := database.DB.Where("user_id = ? AND is_active = ?", userID, true).Find(&accounts).Error; err != nil {
@@ -278,7 +285,7 @@ func InsightsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	utils.JSONResponse(w, http.StatusOK, InsightsResponse{
+	response := InsightsResponse{
 		SavingsRate:         math.Round(savingsRate*10) / 10,
 		EmergencyFundMonths: math.Round(emergencyFundMonths*10) / 10,
 		DebtToIncome:        math.Round(debtToIncome*100*10) / 10,
@@ -286,5 +293,8 @@ func InsightsHandler(w http.ResponseWriter, r *http.Request) {
 		Allocations:         allocations,
 		Recommendations:     recommendations,
 		AiSummary:           aiSummary,
-	})
+	}
+
+	_ = utils.CacheSet(cacheKey, response, 30*time.Minute)
+	utils.JSONResponse(w, http.StatusOK, response)
 }

@@ -148,6 +148,8 @@ func CacheInvalidateUser(userID string) error {
 		fmt.Sprintf("categories:%s:*", userID),
 		fmt.Sprintf("budgets:%s:*", userID),
 		fmt.Sprintf("goals:%s:*", userID),
+		fmt.Sprintf("insights:%s:*", userID),
+		fmt.Sprintf("summary:%s:*", userID),
 	}
 
 	for _, pattern := range patterns {

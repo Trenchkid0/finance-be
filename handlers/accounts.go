@@ -37,6 +37,16 @@ func AccountsHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		status := r.URL.Query().Get("status")
+		if status == "" {
+			status = "active"
+		}
+		cacheKey := utils.BuildCacheKey("accounts", userID, "list", status)
+		var cachedResponse []AccountListItemResponse
+		if err := utils.CacheGet(cacheKey, &cachedResponse); err == nil {
+			utils.JSONResponse(w, http.StatusOK, cachedResponse)
+			return
+		}
+
 		var accounts []database.FinanceAccount
 
 		query := database.DB.Where("user_id = ?", userID)
@@ -62,6 +72,7 @@ func AccountsHandler(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 
+		_ = utils.CacheSet(cacheKey, response, 30*time.Minute)
 		utils.JSONResponse(w, http.StatusOK, response)
 
 	case http.MethodPost:
@@ -104,6 +115,7 @@ func AccountsHandler(w http.ResponseWriter, r *http.Request) {
 			utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to create account")
 			return
 		}
+		_ = utils.CacheInvalidateUser(userID)
 		utils.JSONResponse(w, http.StatusCreated, account)
 
 	default:
@@ -169,6 +181,7 @@ func AccountDetailHandler(w http.ResponseWriter, r *http.Request) {
 			utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to update account")
 			return
 		}
+		_ = utils.CacheInvalidateUser(userID)
 		utils.JSONResponse(w, http.StatusOK, account)
 
 	case http.MethodDelete:
@@ -190,6 +203,7 @@ func AccountDetailHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		tx.Commit()
+		_ = utils.CacheInvalidateUser(userID)
 		utils.JSONResponse(w, http.StatusOK, map[string]string{"message": "Account deleted successfully"})
 
 	default:

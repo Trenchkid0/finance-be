@@ -26,11 +26,19 @@ func BudgetsHandler(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
+		cacheKey := utils.BuildCacheKey("budgets", userID, "list")
+		var cachedResponse []database.Budget
+		if err := utils.CacheGet(cacheKey, &cachedResponse); err == nil {
+			utils.JSONResponse(w, http.StatusOK, cachedResponse)
+			return
+		}
+
 		var budgets []database.Budget
 		if err := database.DB.Where("user_id = ?", userID).Find(&budgets).Error; err != nil {
 			utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to retrieve budgets")
 			return
 		}
+		_ = utils.CacheSet(cacheKey, budgets, 30*time.Minute)
 		utils.JSONResponse(w, http.StatusOK, budgets)
 
 	case http.MethodPost:
@@ -57,6 +65,7 @@ func BudgetsHandler(w http.ResponseWriter, r *http.Request) {
 				utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to update budget limit")
 				return
 			}
+			_ = utils.CacheInvalidateUser(userID)
 			utils.JSONResponse(w, http.StatusOK, budget)
 		} else {
 			// Create new limit
@@ -72,6 +81,7 @@ func BudgetsHandler(w http.ResponseWriter, r *http.Request) {
 				utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to create budget limit")
 				return
 			}
+			_ = utils.CacheInvalidateUser(userID)
 			utils.JSONResponse(w, http.StatusCreated, budget)
 		}
 
@@ -105,6 +115,7 @@ func BudgetDetailHandler(w http.ResponseWriter, r *http.Request) {
 			utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to delete budget limit")
 			return
 		}
+		_ = utils.CacheInvalidateUser(userID)
 		utils.JSONResponse(w, http.StatusOK, map[string]string{"message": "Budget limit deleted successfully"})
 	} else {
 		utils.ErrorResponse(w, http.StatusMethodNotAllowed, "Method not allowed")

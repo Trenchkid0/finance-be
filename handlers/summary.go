@@ -63,7 +63,7 @@ func SummaryHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// ✅ Try Redis cache first (3 minutes TTL)
-	cacheKey := utils.BuildCacheKey("summary", userID, period, cashflowPeriod)
+	cacheKey := utils.BuildCacheKey("user", userID, "summary", period, cashflowPeriod)
 	var cachedResponse DashboardSummaryResponse
 	
 	if err := utils.CacheGet(cacheKey, &cachedResponse); err == nil {

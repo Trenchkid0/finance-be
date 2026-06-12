@@ -28,6 +28,13 @@ func CategoriesHandler(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
+		cacheKey := utils.BuildCacheKey("categories", userID, "list")
+		var cachedResponse []database.Category
+		if err := utils.CacheGet(cacheKey, &cachedResponse); err == nil {
+			utils.JSONResponse(w, http.StatusOK, cachedResponse)
+			return
+		}
+
 		var categories []database.Category
 		// Retrieve global defaults (userId is null) OR custom user categories
 		err := database.DB.Where("user_id IS NULL OR user_id = ?", userID).
@@ -38,6 +45,7 @@ func CategoriesHandler(w http.ResponseWriter, r *http.Request) {
 			utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to retrieve categories")
 			return
 		}
+		_ = utils.CacheSet(cacheKey, categories, 30*time.Minute)
 		utils.JSONResponse(w, http.StatusOK, categories)
 
 	case http.MethodPost:
@@ -67,6 +75,7 @@ func CategoriesHandler(w http.ResponseWriter, r *http.Request) {
 			utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to create category")
 			return
 		}
+		_ = utils.CacheInvalidateUser(userID)
 		utils.JSONResponse(w, http.StatusCreated, category)
 
 	default:
