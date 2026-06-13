@@ -420,10 +420,10 @@ func checkAutoPayBills() {
 func startReminderScheduler() {
 	log.Println("⏰ Reminder background scheduler started")
 	
-	// Check immediately on startup, then every 5 minutes
+	// Check immediately on startup, then every 1 minute
 	go handlers.CheckReminderBills()
 	
-	ticker := time.NewTicker(5 * time.Minute)
+	ticker := time.NewTicker(1 * time.Minute)
 	go func() {
 		for range ticker.C {
 			handlers.CheckReminderBills()

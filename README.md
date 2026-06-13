@@ -104,7 +104,8 @@ The database is automatically migrated on first run. Core models:
 - Recurring expenses (Netflix, utilities, etc.)
 - Frequency: weekly, monthly, yearly
 - **Auto-pay feature**: Automatically creates transactions on due date
-- Telegram notifications
+- **Telegram Reminders**: Flexible reminder days offset (0-7 days before due date) and custom time (hour:minute)
+- Telegram notifications on manual or automated payments
 
 ### AssetHolding
 - Investment portfolio tracking
@@ -410,14 +411,21 @@ Content-Type: application/json
 
 ---
 
-## ⏰ Auto-Pay Scheduler
+## ⏰ Auto-Pay & Reminder Schedulers
 
+### Auto-Pay Scheduler
 The backend runs a background scheduler that automatically processes recurring bills with `autoPay` enabled:
-
 - **Frequency**: Checks on startup, then every 4 hours
 - **Logic**: Creates expense transaction on due date, deducts from linked account
 - **Safety**: Transaction-wrapped with rollback on failure
 - **Notifications**: Optional Telegram alerts on successful payment
+
+### Reminder Scheduler
+A secondary background scheduler runs to trigger Telegram alerts for upcoming manual or auto-pay bills:
+- **Frequency**: Checks on startup, then every 5 minutes
+- **Logic**: Evaluates customizable reminder settings (`reminderDaysBefore` and `reminderTime`) against the next due date
+- **Safety**: Uses a `lastRemindedAt` timestamp to prevent duplicate notifications during the same billing cycle
+- **Notifications**: Delivers rich HTML formatted Telegram alerts detailing bill name, amount, and due date
 
 ---
 
