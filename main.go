@@ -84,6 +84,7 @@ func main() {
 
 	secureRoute("GET /api/summary", handlers.SummaryHandler)
 	secureRoute("POST /api/ai/scan", handlers.AIScanHandler)
+	secureRoute("GET /api/ai/status", handlers.AIStatusHandler)
 	secureRoute("GET /api/ai/insights", handlers.InsightsHandler)
 
 	secureRoute("GET /api/goals", handlers.GoalsHandler)

@@ -361,3 +361,14 @@ func sanitizeCandidate(
 		Reasoning:    reasoning,
 	}
 }
+
+// AIStatusHandler returns whether the AI scan feature is enabled
+func AIStatusHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		utils.ErrorResponse(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+	utils.JSONResponse(w, http.StatusOK, map[string]interface{}{
+		"enabled": services.IsDeepSeekConfigured(),
+	})
+}
