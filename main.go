@@ -168,14 +168,28 @@ func loadEnv() {
 }
 
 func corsMiddleware(next http.Handler, allowedOrigin string) http.Handler {
-	// ✅ PERF/SEC: Only allow explicitly configured origin — don’t reflect arbitrary Origin headers
+	// Build allowed origins set from env + common dev ports
 	allowedOrigins := map[string]bool{
 		allowedOrigin: true,
 	}
-	// Also allow localhost variants for dev
-	if strings.Contains(allowedOrigin, "localhost") {
-		allowedOrigins["http://localhost:5173"] = true
-		allowedOrigins["http://localhost:3000"] = true
+
+	// Add common dev localhost variants
+	for _, o := range []string{
+		"http://localhost:3000", "http://localhost:5173", "http://localhost:5174",
+		"http://localhost:8080", "http://localhost:4173",
+		"http://127.0.0.1:3000", "http://127.0.0.1:5173", "http://127.0.0.1:5174",
+	} {
+		allowedOrigins[o] = true
+	}
+
+	// Also parse comma-separated ALLOWED_ORIGINS env for multi-origin setups
+	if extra := getEnv("ALLOWED_ORIGINS", ""); extra != "" {
+		for _, o := range strings.Split(extra, ",") {
+			o = strings.TrimSpace(o)
+			if o != "" {
+				allowedOrigins[o] = true
+			}
+		}
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -184,11 +198,14 @@ func corsMiddleware(next http.Handler, allowedOrigin string) http.Handler {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 		} else if origin == "" {
 			w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
+		} else {
+			// Origin not allowed — log and reject
+			fmt.Printf("⚠️ CORS blocked origin: %s\n", origin)
 		}
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
-		w.Header().Set("Vary", "Origin") // ✅ Cache-correct for preflight caching
+		w.Header().Set("Vary", "Origin")
 
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusOK)
