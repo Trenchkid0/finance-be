@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	_ "time/tzdata"
 
 	sqlite "github.com/glebarez/sqlite"
 	"golang.org/x/crypto/bcrypt"
@@ -42,6 +43,20 @@ func InitDB(connectionString string) (*gorm.DB, error) {
 
 	if isMySQL {
 		dsn := strings.TrimPrefix(connectionString, "mysql://")
+		
+		// Force local timezone parsing in GORM to use Asia/Jakarta instead of server Local (which is UTC)
+		if strings.Contains(dsn, "loc=Local") {
+			dsn = strings.ReplaceAll(dsn, "loc=Local", "loc=Asia%2FJakarta")
+		} else if strings.Contains(dsn, "loc=UTC") {
+			dsn = strings.ReplaceAll(dsn, "loc=UTC", "loc=Asia%2FJakarta")
+		} else if !strings.Contains(dsn, "loc=") {
+			if strings.Contains(dsn, "?") {
+				dsn += "&loc=Asia%2FJakarta"
+			} else {
+				dsn += "?loc=Asia%2FJakarta"
+			}
+		}
+
 		// GORM MySQL driver needs parseTime=True to map TIME/DATETIME fields to time.Time in Go
 		if !strings.Contains(dsn, "parseTime=") {
 			if strings.Contains(dsn, "?") {
