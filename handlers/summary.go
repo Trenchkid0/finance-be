@@ -173,7 +173,11 @@ func getNetWorthSeries(userID string, period string, currentNetWorth float64) []
 
 	deltaByDay := make(map[string]float64, len(dayDeltas))
 	for _, d := range dayDeltas {
-		deltaByDay[d.Day] = d.Delta
+		dayKey := d.Day
+		if len(dayKey) >= 10 {
+			dayKey = dayKey[:10]
+		}
+		deltaByDay[dayKey] = d.Delta
 	}
 
 	// Generate daily dates
