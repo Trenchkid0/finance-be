@@ -134,8 +134,8 @@ docker run -d \
 
 ---
 
-## 🤖 Integrasi Bot Telegram
-Backend ini menyediakan endpoint API Key (`/api/api-keys`) agar bot Telegram (`bot-keuangan`) dapat berinteraksi dengan aman.
+## 🤖 Integrasi Bot Telegram & Fitur Receipt Scan
+Backend ini menyediakan endpoint API Key (`/api/api-keys`) agar bot Telegram (`bot-keuangan`) dapat berinteraksi secara aman.
 1. Dapatkan API Key di halaman **Settings -> API Keys** pada dashboard web.
 2. Tempel key tersebut pada konfigurasi `.env` milik bot untuk menyinkronkan data saldo & transaksi secara instan.
 
@@ -148,3 +148,67 @@ Untuk menghubungkan akun Telegram pengguna dengan dashboard web (berguna untuk n
   2. Kirim perintah `/start` atau `/help`.
   3. Bot akan membalas dengan pesan bantuan dan menyantumkan **Telegram Chat ID Anda** berupa angka unik (misal: `123456789`).
   4. Anda dapat menggunakan ID ini untuk pengetesan manual API atau integrasi scheduler notifikasi backend.
+
+### 📸 Alur Unggah Struk Belanja (Receipt Scan)
+Bot Telegram dan web app mendukung pengunggahan foto struk belanja:
+- **Alur Scan AI Bot:**
+  Kirim foto struk -> Bot membaca tulisan lewat OCR -> Hasil dianalisis AI (DeepSeek) -> Disimpan ke database dengan flag indikator struk.
+- **Alur Input Manual Bot:**
+  Masukkan data transaksi -> Bot bertanya "Ingin melampirkan foto struk?" -> Kirim foto struk (opsional) atau ketik 'skip'.
+
+---
+
+## ⚡ Redis Caching
+Cashing menggunakan Redis telah diintegrasikan untuk meningkatkan performa response dan mengurangi beban kueri database.
+
+### 1. Konfigurasi (.env)
+Tambahkan variabel berikut ke file `.env` di folder backend:
+```env
+REDIS_HOST=100.86.12.111      # Hostname / IP Server Redis
+REDIS_PORT=6379               # Port Redis (default: 6379)
+REDIS_PASSWORD=               # Password Redis (kosongkan jika tanpa auth)
+REDIS_DB=0                    # Database index Redis (0-15)
+REDIS_ENABLED=true            # Set true untuk mengaktifkan cache
+```
+
+### 2. Fitur Utama
+- **Graceful Degradation**: Server backend tetap berjalan normal menggunakan database secara langsung jika server Redis mati/offline.
+- **Pattern-based Invalidation**: Membersihkan cache secara instan setelah adanya mutasi data (POST, PUT, DELETE) agar data selalu sinkron.
+- **User-scoped Cache**: Isolasi cache per-user untuk menjaga privasi keamanan data keuangan masing-masing pengguna.
+
+### 3. Durasi Cache (TTL)
+- **Short (5 Menit)**: Data yang sering berubah (daftar transaksi, saldo terkini).
+- **Medium (30 Menit)**: Data berfrekuensi perubahan sedang (daftar rekening, kategori).
+- **Long (2 Jam)**: Data yang jarang berubah (profil pengguna, pengaturan sistem).
+
+---
+
+## 🧪 Panduan Pengujian & Testing
+
+### 1. Menjalankan Uji Otomatis
+Gunakan skrip pengujian bawaan di direktori `backend/`:
+- **Windows (PowerShell):**
+  - `./test-backend.ps1`: Melakukan verifikasi file database, port, dan meluncurkan server backend.
+  - `./test-api.ps1`: Menguji semua endpoint utama (Login, Me, Accounts, Transactions) secara otomatis menggunakan cURL.
+- **macOS / Linux:**
+  - `./test-backend.sh` atau `go test ./...`
+
+### 2. Panduan Troubleshooting
+- **Port 8080 Bentrok/Digunakan:**
+  Ubah konfigurasi port di file `.env` (misal: `PORT=8081`) atau matikan proses port 8080 secara paksa di PowerShell:
+  ```powershell
+  Get-NetTCPConnection -LocalPort 8080 | Select-Object -ExpandProperty OwningProcess | Stop-Process -Force
+  ```
+- **Error Database / Ingin Reset Data:**
+  Hapus file SQLite lokal `maybe.db` dan jalankan ulang backend server untuk melakukan migrasi & seeding data demo otomatis:
+  ```powershell
+  Remove-Item maybe.db
+  ./test-backend.ps1
+  ```
+
+---
+
+## 🎨 Arsitektur Tema & Pewarnaan
+Sistem kustomisasi tema visual sepenuhnya didelegasikan di sisi klien (frontend) menggunakan standardisasi CSS custom properties.
+- **Penyimpanan:** Pilihan tema pengguna disimpan pada peramban melalui `localStorage`.
+- **Decoupled:** Backend tidak memerlukan tabel database tambahan untuk preferensi tema ini, menjamin operasi API tetap ringan dan cepat.

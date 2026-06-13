@@ -2,11 +2,14 @@ package main
 
 import (
 	"bufio"
+	"compress/gzip"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"maybe-finance-backend/database"
@@ -115,6 +118,12 @@ func main() {
 	allowedOrigin := getEnv("ALLOWED_ORIGIN", "http://localhost:5173")
 	handler := corsMiddleware(mux, allowedOrigin)
 
+	// ✅ PERF: Gzip compression — reduces JSON payload size 60–80%
+	handler = gzipMiddleware(handler)
+
+	// ✅ PERF: Request timeout — prevents slow queries from holding connections forever
+	handler = http.TimeoutHandler(handler, 30*time.Second, `{"error":"request timeout"}`)
+
 	// 5. Start Server
 	host := getEnv("HOST", "0.0.0.0")
 	port := getEnv("PORT", "8080")
@@ -159,17 +168,27 @@ func loadEnv() {
 }
 
 func corsMiddleware(next http.Handler, allowedOrigin string) http.Handler {
+	// ✅ PERF/SEC: Only allow explicitly configured origin — don’t reflect arbitrary Origin headers
+	allowedOrigins := map[string]bool{
+		allowedOrigin: true,
+	}
+	// Also allow localhost variants for dev
+	if strings.Contains(allowedOrigin, "localhost") {
+		allowedOrigins["http://localhost:5173"] = true
+		allowedOrigins["http://localhost:3000"] = true
+	}
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
-		if origin != "" {
-			// In dev or credentials mode, reflect request origin if matched, or use the allowedOrigin
+		if origin != "" && allowedOrigins[origin] {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
-		} else {
+		} else if origin == "" {
 			w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
 		}
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
+		w.Header().Set("Vary", "Origin") // ✅ Cache-correct for preflight caching
 
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusOK)
@@ -177,6 +196,39 @@ func corsMiddleware(next http.Handler, allowedOrigin string) http.Handler {
 		}
 
 		next.ServeHTTP(w, r)
+	})
+}
+
+// ✅ PERF: gzipMiddleware compresses responses for clients that accept gzip encoding
+// Uses a sync.Pool to reuse gzip writers and avoid allocation pressure
+var gzipPool = sync.Pool{New: func() interface{} { return gzip.NewWriter(io.Discard) }}
+
+type gzipResponseWriter struct {
+	http.ResponseWriter
+	Writer io.Writer
+}
+
+func (w *gzipResponseWriter) Write(b []byte) (int, error) {
+	return w.Writer.Write(b)
+}
+
+func gzipMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		gz := gzipPool.Get().(*gzip.Writer)
+		defer gzipPool.Put(gz)
+		gz.Reset(w)
+		defer gz.Close()
+
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Del("Content-Length") // length unknown after compression
+		w.Header().Set("Vary", "Accept-Encoding")
+
+		next.ServeHTTP(&gzipResponseWriter{ResponseWriter: w, Writer: gz}, r)
 	})
 }
 

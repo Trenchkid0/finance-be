@@ -59,16 +59,40 @@ func AccountsHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// ✅ PERF: Single grouped query instead of 2 COUNT queries per account (N+1 problem)
+		type AccCount struct {
+			AccountID string `gorm:"column:account_id"`
+			Count     int64  `gorm:"column:count"`
+		}
+		var srcCounts []AccCount
+		var dstCounts []AccCount
+
+		// Count transactions where each account is the source
+		database.DB.Model(&database.Transaction{}).
+			Select("account_id, COUNT(*) as count").
+			Where("user_id = ?", userID).
+			Group("account_id").Scan(&srcCounts)
+
+		// Count transactions where each account is the transfer destination
+		database.DB.Model(&database.Transaction{}).
+			Select("transfer_to_id as account_id, COUNT(*) as count").
+			Where("user_id = ? AND transfer_to_id IS NOT NULL", userID).
+			Group("transfer_to_id").Scan(&dstCounts)
+
+		// Merge counts into a map for O(1) lookup
+		countMap := make(map[string]int64)
+		for _, c := range srcCounts {
+			countMap[c.AccountID] += c.Count
+		}
+		for _, c := range dstCounts {
+			countMap[c.AccountID] += c.Count
+		}
+
 		response := make([]AccountListItemResponse, 0, len(accounts))
 		for _, a := range accounts {
-			var txCount int64
-			var tfCount int64
-			database.DB.Model(&database.Transaction{}).Where("account_id = ?", a.ID).Count(&txCount)
-			database.DB.Model(&database.Transaction{}).Where("transfer_to_id = ?", a.ID).Count(&tfCount)
-
 			response = append(response, AccountListItemResponse{
 				FinanceAccount:   a,
-				TransactionCount: txCount + tfCount,
+				TransactionCount: countMap[a.ID],
 			})
 		}
 

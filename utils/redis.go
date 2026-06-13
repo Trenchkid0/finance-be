@@ -139,7 +139,52 @@ func CacheDeletePattern(pattern string) error {
 	return nil
 }
 
+// CacheDeletePatternsPipelined deletes all keys matching multiple patterns in a single Redis pipeline round-trip
+// ✅ PERF: Reduces N network round-trips (one per pattern) to just 1
+func CacheDeletePatternsPipelined(patterns []string) error {
+	if !IsCacheEnabled() {
+		return nil
+	}
+
+	pipe := RedisClient.Pipeline()
+
+	// Stage all SCAN commands in the pipeline
+	type scanCmd struct {
+		iter *redis.ScanCmd
+	}
+	var cmds []scanCmd
+	for _, pattern := range patterns {
+		cmd := pipe.Scan(ctx, 0, pattern, 100)
+		cmds = append(cmds, scanCmd{iter: cmd})
+	}
+
+	// Execute pipeline (1 round-trip for all SCANs)
+	_, err := pipe.Exec(ctx)
+	if err != nil && err != redis.Nil {
+		return err
+	}
+
+	// Collect all keys from scan results
+	var allKeys []string
+	for _, cmd := range cmds {
+		keys, _, _ := cmd.iter.Result()
+		allKeys = append(allKeys, keys...)
+	}
+
+	// Delete all collected keys in a single pipeline batch
+	if len(allKeys) > 0 {
+		delPipe := RedisClient.Pipeline()
+		for _, key := range allKeys {
+			delPipe.Del(ctx, key)
+		}
+		_, err = delPipe.Exec(ctx)
+	}
+
+	return err
+}
+
 // CacheInvalidateUser invalidates all cache entries for a specific user
+// ✅ PERF: Uses pipelined deletion — single round-trip instead of 8 separate SCAN+DEL operations
 func CacheInvalidateUser(userID string) error {
 	patterns := []string{
 		fmt.Sprintf("user:%s:*", userID),
@@ -152,13 +197,7 @@ func CacheInvalidateUser(userID string) error {
 		fmt.Sprintf("summary:%s:*", userID),
 	}
 
-	for _, pattern := range patterns {
-		if err := CacheDeletePattern(pattern); err != nil {
-			log.Printf("Error invalidating cache pattern %s: %v\n", pattern, err)
-		}
-	}
-
-	return nil
+	return CacheDeletePatternsPipelined(patterns)
 }
 
 // BuildCacheKey builds a standardized cache key

@@ -107,19 +107,27 @@ func InsightsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 2. Fetch income and expenses for past 30 days
+	// 2. ✅ PERF: Use SQL SUM instead of loading all transactions into Go and looping
 	thirtyDaysAgo := time.Now().AddDate(0, 0, -30)
-	var transactions []database.Transaction
-	database.DB.Where("user_id = ? AND date >= ?", userID, thirtyDaysAgo).Find(&transactions)
+	type TypeSum struct {
+		Type  string  `gorm:"column:type"`
+		Total float64 `gorm:"column:total"`
+	}
+	var typeSums []TypeSum
+	database.DB.Model(&database.Transaction{}).
+		Select("type, SUM(amount) as total").
+		Where("user_id = ? AND date >= ?", userID, thirtyDaysAgo).
+		Group("type").
+		Scan(&typeSums)
 
 	var monthlyIncome float64
 	var monthlyExpense float64
-
-	for _, tx := range transactions {
-		if tx.Type == database.TransactionTypeIncome {
-			monthlyIncome += tx.Amount
-		} else if tx.Type == database.TransactionTypeExpense {
-			monthlyExpense += tx.Amount
+	for _, s := range typeSums {
+		switch s.Type {
+		case string(database.TransactionTypeIncome):
+			monthlyIncome = s.Total
+		case string(database.TransactionTypeExpense):
+			monthlyExpense = s.Total
 		}
 	}
 

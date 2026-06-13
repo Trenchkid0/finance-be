@@ -158,23 +158,22 @@ func periodToRange(period string) (time.Time, time.Time) {
 func getNetWorthSeries(userID string, period string, currentNetWorth float64) []NetWorthPoint {
 	start, end := periodToRange(period)
 
-	var txs []database.Transaction
-	database.DB.Where("user_id = ? AND date >= ? AND date < ?", userID, start, end).
-		Order("date asc").
-		Find(&txs)
+	// ✅ PERF: Let SQL do the aggregation instead of loading all rows into Go memory
+	type DayDelta struct {
+		Day   string  `gorm:"column:day"`
+		Delta float64 `gorm:"column:delta"`
+	}
+	var dayDeltas []DayDelta
+	database.DB.Model(&database.Transaction{}).
+		Select(`DATE(date) as day, SUM(CASE WHEN type = 'income' THEN amount WHEN type = 'expense' THEN -amount ELSE 0 END) as delta`).
+		Where("user_id = ? AND date >= ? AND date < ?", userID, start, end).
+		Group("DATE(date)").
+		Order("day ASC").
+		Scan(&dayDeltas)
 
-	// Map to track sum of net worth changes per day
-	deltaByDay := make(map[string]float64)
-	for _, tx := range txs {
-		key := tx.Date.Format("2006-01-02")
-		delta := 0.0
-		if tx.Type == database.TransactionTypeIncome {
-			delta = tx.Amount
-		} else if tx.Type == database.TransactionTypeExpense {
-			delta = -tx.Amount
-		}
-		// Transfers don't change overall net worth
-		deltaByDay[key] += delta
+	deltaByDay := make(map[string]float64, len(dayDeltas))
+	for _, d := range dayDeltas {
+		deltaByDay[d.Day] = d.Delta
 	}
 
 	// Generate daily dates
@@ -204,35 +203,25 @@ func getNetWorthSeries(userID string, period string, currentNetWorth float64) []
 func getCashflow(userID string, period string) CashflowSummary {
 	start, end := periodToRange(period)
 
-	type GroupResult struct {
-		Type       database.TransactionType
-		CategoryID *string
-		Total      float64
+	// ✅ PERF: Single JOIN query instead of 2 separate queries (grouped txs + category lookup)
+	type JoinedResult struct {
+		Type       database.TransactionType `gorm:"column:type"`
+		CategoryID *string                  `gorm:"column:category_id"`
+		CatName    *string                  `gorm:"column:cat_name"`
+		CatColor   *string                  `gorm:"column:cat_color"`
+		Total      float64                  `gorm:"column:total"`
 	}
 
-	var results []GroupResult
-	database.DB.Model(&database.Transaction{}).
-		Select("type, category_id, SUM(amount) as total").
-		Where("user_id = ? AND type IN (?, ?) AND date >= ? AND date < ?", userID, database.TransactionTypeIncome, database.TransactionTypeExpense, start, end).
-		Group("type, category_id").
+	var results []JoinedResult
+	database.DB.Table("transactions").
+		Select(`transactions.type, transactions.category_id,
+			categories.name as cat_name, categories.color as cat_color,
+			SUM(transactions.amount) as total`).
+		Joins("LEFT JOIN categories ON categories.id = transactions.category_id").
+		Where("transactions.user_id = ? AND transactions.type IN (?, ?) AND transactions.date >= ? AND transactions.date < ?",
+			userID, database.TransactionTypeIncome, database.TransactionTypeExpense, start, end).
+		Group("transactions.type, transactions.category_id, categories.name, categories.color").
 		Scan(&results)
-
-	// Get categories
-	var categoryIDs []string
-	for _, r := range results {
-		if r.CategoryID != nil && *r.CategoryID != "" {
-			categoryIDs = append(categoryIDs, *r.CategoryID)
-		}
-	}
-
-	categoryMeta := make(map[string]database.Category)
-	if len(categoryIDs) > 0 {
-		var categories []database.Category
-		database.DB.Where("id IN ?", categoryIDs).Find(&categories)
-		for _, c := range categories {
-			categoryMeta[c.ID] = c
-		}
-	}
 
 	var inflow []SankeyDatum
 	var outflow []SankeyDatum
@@ -247,11 +236,11 @@ func getCashflow(userID string, period string) CashflowSummary {
 		name := "Lainnya"
 		color := "#8B949E"
 
-		if g.CategoryID != nil {
-			if cat, found := categoryMeta[*g.CategoryID]; found {
-				name = cat.Name
-				color = cat.Color
-			}
+		if g.CatName != nil && *g.CatName != "" {
+			name = *g.CatName
+		}
+		if g.CatColor != nil && *g.CatColor != "" {
+			color = *g.CatColor
 		}
 
 		if name == "Lainnya" {

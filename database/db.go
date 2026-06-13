@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math/rand"
+	"os"
 	"strings"
 	"time"
 
@@ -20,8 +21,15 @@ var DB *gorm.DB
 // InitDB initializes the database and returns the connection.
 // It runs auto-migrations and seeds default data if the database is empty.
 func InitDB(connectionString string) (*gorm.DB, error) {
+	// ✅ PERF: Make SQL logger env-aware — silent in production, verbose only when DEBUG_SQL=true
+	logLevel := logger.Silent
+	if os.Getenv("DEBUG_SQL") == "true" {
+		logLevel = logger.Info
+	}
+
 	config := &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Info),
+		Logger:        logger.Default.LogMode(logLevel),
+		PrepareStmt:   true, // ✅ PERF: Cache prepared statements to reduce parse overhead
 	}
 
 	var dialeg gorm.Dialector
@@ -51,6 +59,16 @@ func InitDB(connectionString string) (*gorm.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
+
+	// ✅ PERF: Tune connection pool — prevents connection exhaustion and stale connections
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, err
+	}
+	sqlDB.SetMaxOpenConns(25)
+	sqlDB.SetMaxIdleConns(10)
+	sqlDB.SetConnMaxLifetime(5 * time.Minute)
+	sqlDB.SetConnMaxIdleTime(3 * time.Minute)
 
 	// Run Auto-migrations
 	err = db.AutoMigrate(
@@ -134,35 +152,25 @@ func SeedDemoData(db *gorm.DB) error {
 		{"Lainnya", "💰", "#8B949E"},
 	}
 
-	var seededExpenses []Category
+	// ✅ PERF: Batch-insert categories instead of one-by-one saves
+	allCategories := make([]Category, 0, len(expenseCategories)+len(incomeCategories))
 	for _, c := range expenseCategories {
-		cat := Category{
-			ID:        fmt.Sprintf("default-expense-%s", slug(c.name)),
-			Name:      c.name,
-			Type:      CategoryTypeExpense,
-			Icon:      c.icon,
-			Color:     c.color,
-			IsDefault: true,
-			CreatedAt: time.Now(),
-		}
-		db.Save(&cat)
-		seededExpenses = append(seededExpenses, cat)
+		allCategories = append(allCategories, Category{
+			ID: fmt.Sprintf("default-expense-%s", slug(c.name)), Name: c.name,
+			Type: CategoryTypeExpense, Icon: c.icon, Color: c.color,
+			IsDefault: true, CreatedAt: time.Now(),
+		})
 	}
-
-	var seededIncomes []Category
 	for _, c := range incomeCategories {
-		cat := Category{
-			ID:        fmt.Sprintf("default-income-%s", slug(c.name)),
-			Name:      c.name,
-			Type:      CategoryTypeIncome,
-			Icon:      c.icon,
-			Color:     c.color,
-			IsDefault: true,
-			CreatedAt: time.Now(),
-		}
-		db.Save(&cat)
-		seededIncomes = append(seededIncomes, cat)
+		allCategories = append(allCategories, Category{
+			ID: fmt.Sprintf("default-income-%s", slug(c.name)), Name: c.name,
+			Type: CategoryTypeIncome, Icon: c.icon, Color: c.color,
+			IsDefault: true, CreatedAt: time.Now(),
+		})
 	}
+	db.CreateInBatches(&allCategories, 20)
+	seededExpenses := allCategories[:len(expenseCategories)]
+	seededIncomes := allCategories[len(expenseCategories):]
 
 	// 2. Seed Demo User
 	demoEmail := "demo@maybe.local"
@@ -326,12 +334,8 @@ func SeedDemoData(db *gorm.DB) error {
 		}
 	}
 
-	// Save transactions
-	for _, tx := range transactions {
-		if err := db.Create(&tx).Error; err != nil {
-			return err
-		}
-	}
+	// ✅ PERF: Batch-insert transactions instead of one-by-one creates
+	db.CreateInBatches(&transactions, 50)
 
 	// 5. Reconcile account balances based on transactions
 	for _, acc := range accounts {

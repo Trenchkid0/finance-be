@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -26,6 +27,35 @@ func getEnv(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+// ✅ PERF: In-memory cache for API key hash → userID lookups (avoids DB hit on every request)
+type apiKeyCacheEntry struct {
+	UserID    string
+	ExpiresAt time.Time
+}
+
+var (
+	apiKeyCache     sync.Map
+	apiKeyCacheTTL  = 2 * time.Minute
+)
+
+func getCachedAPIKeyUserID(hashHex string) (string, bool) {
+	if val, ok := apiKeyCache.Load(hashHex); ok {
+		entry := val.(*apiKeyCacheEntry)
+		if time.Now().Before(entry.ExpiresAt) {
+			return entry.UserID, true
+		}
+		apiKeyCache.Delete(hashHex) // expired
+	}
+	return "", false
+}
+
+func setCachedAPIKeyUserID(hashHex, userID string) {
+	apiKeyCache.Store(hashHex, &apiKeyCacheEntry{
+		UserID:    userID,
+		ExpiresAt: time.Now().Add(apiKeyCacheTTL),
+	})
 }
 
 // Claims represents the JWT claims
@@ -111,16 +141,25 @@ func AuthRequired(next http.Handler) http.Handler {
 					hash := sha256.Sum256([]byte(tokenOrKey))
 					hashHex := hex.EncodeToString(hash[:])
 
-					var apiKey database.ApiKey
-					if err := database.DB.Where("key_hash = ? AND revoked_at IS NULL", hashHex).First(&apiKey).Error; err == nil {
-						userID = apiKey.UserID
+					// ✅ PERF: Check in-memory cache first before hitting DB
+					if cachedUserID, ok := getCachedAPIKeyUserID(hashHex); ok {
+						userID = cachedUserID
 						authenticated = true
+					} else {
+						var apiKey database.ApiKey
+						if err := database.DB.Where("key_hash = ? AND revoked_at IS NULL", hashHex).First(&apiKey).Error; err == nil {
+							userID = apiKey.UserID
+							authenticated = true
 
-						// Update last used time asynchronously to prevent blocking the request
-						go func(keyID string) {
-							now := time.Now()
-							database.DB.Model(&database.ApiKey{}).Where("id = ?", keyID).Update("last_used_at", &now)
-						}(apiKey.ID)
+							// Cache the result for subsequent requests
+							setCachedAPIKeyUserID(hashHex, apiKey.UserID)
+
+							// Update last used time asynchronously to prevent blocking the request
+							go func(keyID string) {
+								now := time.Now()
+								database.DB.Model(&database.ApiKey{}).Where("id = ?", keyID).Update("last_used_at", &now)
+							}(apiKey.ID)
+						}
 					}
 				}
 			}

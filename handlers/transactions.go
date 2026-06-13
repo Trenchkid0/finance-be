@@ -486,19 +486,26 @@ func ExportTransactionsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var transactions []database.Transaction
-	err := database.DB.Model(&database.Transaction{}).
-		Preload("Category").
-		Preload("Account").
-		Preload("TransferTo").
-		Where("user_id = ?", userID).
-		Order("date desc").
-		Find(&transactions).Error
-
+	// ✅ PERF: Stream rows via db.Rows() instead of loading all into memory
+	rows, err := database.DB.Model(&database.Transaction{}).
+		Select(`transactions.date, transactions.type, 
+			acc_src.name as src_name,
+			acc_dst.name as dst_name,
+			categories.name as cat_name,
+			transactions.amount,
+			transactions.description,
+			transactions.note`).
+		Joins("LEFT JOIN categories ON categories.id = transactions.category_id").
+		Joins("LEFT JOIN finance_accounts acc_src ON acc_src.id = transactions.account_id").
+		Joins("LEFT JOIN finance_accounts acc_dst ON acc_dst.id = transactions.transfer_to_id").
+		Where("transactions.user_id = ?", userID).
+		Order("transactions.date desc").
+		Rows()
 	if err != nil {
 		utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to retrieve transactions for export")
 		return
 	}
+	defer rows.Close()
 
 	// Set headers
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
@@ -507,28 +514,46 @@ func ExportTransactionsHandler(w http.ResponseWriter, r *http.Request) {
 	writer := csv.NewWriter(w)
 	defer writer.Flush()
 
-	// Write CSV header
 	_ = writer.Write([]string{"Date", "Type", "Source Account", "Destination Account", "Category", "Amount", "Description", "Note"})
 
-	for _, tx := range transactions {
-		destAcc := ""
-		if tx.TransferTo != nil {
-			destAcc = tx.TransferTo.Name
+	for rows.Next() {
+		var (
+			txDate  time.Time
+			txType  string
+			srcName *string
+			dstName *string
+			catName *string
+			amount  float64
+			desc    string
+			note    string
+		)
+
+		if err := rows.Scan(&txDate, &txType, &srcName, &dstName, &catName, &amount, &desc, &note); err != nil {
+			continue
 		}
-		catName := "Uncategorized"
-		if tx.Category != nil {
-			catName = tx.Category.Name
+
+		dest := ""
+		if dstName != nil {
+			dest = *dstName
+		}
+		cat := "Uncategorized"
+		if catName != nil {
+			cat = *catName
+		}
+		src := ""
+		if srcName != nil {
+			src = *srcName
 		}
 
 		record := []string{
-			tx.Date.Format("2006-01-02"),
-			string(tx.Type),
-			tx.Account.Name,
-			destAcc,
-			catName,
-			fmt.Sprintf("%.2f", tx.Amount),
-			tx.Description,
-			tx.Note,
+			txDate.Format("2006-01-02"),
+			txType,
+			src,
+			dest,
+			cat,
+			fmt.Sprintf("%.2f", amount),
+			desc,
+			note,
 		}
 		_ = writer.Write(record)
 	}
@@ -615,9 +640,25 @@ func ImportTransactionsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ✅ PERF: Preload all accounts and categories into maps for O(1) lookup during import
+	var allAccounts []database.FinanceAccount
+	database.DB.Where("user_id = ?", userID).Find(&allAccounts)
+	accByName := make(map[string]*database.FinanceAccount, len(allAccounts))
+	for i := range allAccounts {
+		accByName[allAccounts[i].Name] = &allAccounts[i]
+	}
+
+	var allCategories []database.Category
+	database.DB.Where("user_id = ? OR user_id IS NULL", userID).Find(&allCategories)
+	catByName := make(map[string]*database.Category, len(allCategories))
+	for i := range allCategories {
+		catByName[allCategories[i].Name] = &allCategories[i]
+	}
+
 	tx := database.DB.Begin()
 	imported := 0
 	errors := []string{}
+	var batchTx []database.Transaction // collect for batch insert
 
 	for i, record := range records[1:] {
 		if len(record) < 6 {
@@ -653,22 +694,22 @@ func ImportTransactionsHandler(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		// Find source account by name
+		// Find source account by name (✅ PERF: O(1) map lookup instead of DB query per row)
 		accountName := strings.TrimSpace(record[2])
-		var sourceAcc database.FinanceAccount
-		if err := tx.Where("name = ? AND user_id = ?", accountName, userID).First(&sourceAcc).Error; err != nil {
+		sourceAccPtr, found := accByName[accountName]
+		if !found {
 			errors = append(errors, fmt.Sprintf("Row %d: account '%s' not found", i+2, accountName))
 			continue
 		}
+		sourceAcc := *sourceAccPtr
 
-		// Find destination account for transfers
+		// Find destination account for transfers (✅ PERF: O(1) map lookup)
 		var transferToID *string
 		if txType == database.TransactionTypeTransfer && len(record) > 3 {
 			destName := strings.TrimSpace(record[3])
 			if destName != "" {
-				var destAcc database.FinanceAccount
-				if err := tx.Where("name = ? AND user_id = ?", destName, userID).First(&destAcc).Error; err == nil {
-					transferToID = &destAcc.ID
+				if destPtr, ok := accByName[destName]; ok {
+					transferToID = &destPtr.ID
 				} else {
 					errors = append(errors, fmt.Sprintf("Row %d: destination account '%s' not found", i+2, destName))
 					continue
@@ -676,14 +717,13 @@ func ImportTransactionsHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		// Find category by name (optional)
+		// Find category by name (✅ PERF: O(1) map lookup)
 		var categoryID *string
 		if len(record) > 4 {
 			categoryName := strings.TrimSpace(record[4])
 			if categoryName != "" && categoryName != "Uncategorized" {
-				var category database.Category
-				if err := tx.Where("name = ? AND (user_id = ? OR user_id IS NULL)", categoryName, userID).First(&category).Error; err == nil {
-					categoryID = &category.ID
+				if cat, ok := catByName[categoryName]; ok {
+					categoryID = &cat.ID
 				}
 			}
 		}
@@ -731,17 +771,20 @@ func ImportTransactionsHandler(w http.ResponseWriter, r *http.Request) {
 			UpdatedAt:    time.Now(),
 		}
 
-		if err := tx.Create(&transaction).Error; err != nil {
-			errors = append(errors, fmt.Sprintf("Row %d: failed to create transaction", i+2))
-			continue
-		}
-
+		batchTx = append(batchTx, transaction)
 		imported++
 	}
 
 	if imported == 0 {
 		tx.Rollback()
 		utils.ErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("No transactions imported. Errors: %v", errors))
+		return
+	}
+
+	// ✅ PERF: Batch insert all transactions at once
+	if err := tx.CreateInBatches(&batchTx, 50).Error; err != nil {
+		tx.Rollback()
+		utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to insert transactions")
 		return
 	}
 
