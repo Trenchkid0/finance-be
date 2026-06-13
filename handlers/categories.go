@@ -12,8 +12,8 @@ import (
 )
 
 type CategoryRequest struct {
-	Name  string                `json:"name"`
-	Type  database.CategoryType `json:"type"`
+	Name  string                `json:"name" validate:"required"`
+	Type  database.CategoryType `json:"type" validate:"required,oneof=income|expense"`
 	Icon  string                `json:"icon"`
 	Color string                `json:"color"`
 }
@@ -55,8 +55,7 @@ func CategoriesHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if req.Name == "" || req.Type == "" {
-			utils.ErrorResponse(w, http.StatusBadRequest, "Name and Type are required")
+		if !middleware.ValidateAndRespond(w, req) {
 			return
 		}
 

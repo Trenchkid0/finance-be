@@ -49,14 +49,14 @@ type User struct {
 // FinanceAccount corresponds to the finance_accounts table (source/dest of funds).
 type FinanceAccount struct {
 	ID        string      `gorm:"primaryKey;type:varchar(191)" json:"id"`
-	UserID    string      `gorm:"index;type:varchar(191);not null" json:"userId"`
+	UserID    string      `gorm:"index;index:idx_user_active;type:varchar(191);not null" json:"userId"`
 	Name      string      `gorm:"type:varchar(191);not null" json:"name"`
 	Type      AccountType `gorm:"type:varchar(50);not null" json:"type"`
 	Balance   float64     `gorm:"type:decimal(15,2);default:0;not null" json:"balance"`
 	Currency  string      `gorm:"type:varchar(10);default:'IDR';not null" json:"currency"`
 	Icon      string      `gorm:"type:varchar(100)" json:"icon"`
 	Color     string      `gorm:"type:varchar(50)" json:"color"`
-	IsActive  bool        `gorm:"default:true;not null" json:"isActive"`
+	IsActive  bool        `gorm:"index:idx_user_active;default:true;not null" json:"isActive"`
 	CreatedAt time.Time   `json:"createdAt"`
 	UpdatedAt time.Time   `json:"updatedAt"`
 }
@@ -98,14 +98,14 @@ type Budget struct {
 // Transaction represents a single income, expense, or transfer.
 type Transaction struct {
 	ID               uint            `gorm:"primaryKey;autoIncrement" json:"id"`
-	UserID           string          `gorm:"index;type:varchar(191);not null" json:"userId"`
+	UserID           string          `gorm:"index;index:idx_user_date;index:idx_user_type_date;type:varchar(191);not null" json:"userId"`
 	AccountID        string          `gorm:"index;type:varchar(191);not null" json:"accountId"`
 	CategoryID       *string         `gorm:"index;type:varchar(191)" json:"categoryId"` // Nullable (especially for transfers)
-	Type             TransactionType `gorm:"type:varchar(50);not null" json:"type"`
+	Type             TransactionType `gorm:"index:idx_user_type_date;type:varchar(50);not null" json:"type"`
 	Amount           float64         `gorm:"type:decimal(15,2);not null" json:"amount"`
 	Description      string          `gorm:"type:varchar(191)" json:"description"`
 	Note             string          `gorm:"type:text" json:"note"`
-	Date             time.Time       `gorm:"index;not null" json:"date"`
+	Date             time.Time       `gorm:"index;index:idx_user_date;not null" json:"date"`
 	TransferToID     *string         `gorm:"type:varchar(191)" json:"transferToId"` // ID of target account if transfer
 	ReceiptImageURL  *string         `gorm:"type:text" json:"receiptImageUrl"`       // URL foto struk/receipt
 
@@ -136,13 +136,13 @@ type SavingsGoal struct {
 // RecurringBill represents recurring expenses/subscriptions.
 type RecurringBill struct {
 	ID                 string          `gorm:"primaryKey;type:varchar(191)" json:"id"`
-	UserID             string          `gorm:"index;type:varchar(191);not null" json:"userId"`
+	UserID             string          `gorm:"index;index:idx_user_autopay;type:varchar(191);not null" json:"userId"`
 	Name               string          `gorm:"type:varchar(191);not null" json:"name"`
 	Amount             float64         `gorm:"type:decimal(15,2);not null" json:"amount"`
 	CategoryID         *string         `gorm:"type:varchar(191)" json:"categoryId"`
 	Frequency          string          `gorm:"type:varchar(50);default:'monthly';not null" json:"frequency"` // "weekly", "monthly", "yearly"
 	DayOfMonth         int             `gorm:"default:1;not null" json:"dayOfMonth"`
-	AutoPay            bool            `gorm:"default:false;not null" json:"autoPay"`
+	AutoPay            bool            `gorm:"index:idx_user_autopay;default:false;not null" json:"autoPay"`
 	AccountID          *string         `gorm:"type:varchar(191)" json:"accountId"`
 	LastPaidAt         *time.Time      `json:"lastPaidAt,omitempty"`
 	ReminderDaysBefore *int            `json:"reminderDaysBefore,omitempty"`

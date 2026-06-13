@@ -16,14 +16,14 @@ import (
 )
 
 type RegisterRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
-	Name     string `json:"name"`
+	Email    string `json:"email" validate:"required,email"`
+	Password string `json:"password" validate:"required,min=6"`
+	Name     string `json:"name" validate:"required"`
 }
 
 type LoginRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Email    string `json:"email" validate:"required,email"`
+	Password string `json:"password" validate:"required"`
 }
 
 // RegisterHandler handles user signup
@@ -39,8 +39,7 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Email == "" || req.Password == "" || req.Name == "" {
-		utils.ErrorResponse(w, http.StatusBadRequest, "Missing required fields")
+	if !middleware.ValidateAndRespond(w, req) {
 		return
 	}
 
@@ -140,8 +139,7 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Email == "" || req.Password == "" {
-		utils.ErrorResponse(w, http.StatusBadRequest, "Email and password are required")
+	if !middleware.ValidateAndRespond(w, req) {
 		return
 	}
 

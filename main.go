@@ -3,13 +3,16 @@ package main
 import (
 	"bufio"
 	"compress/gzip"
+	"context"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"maybe-finance-backend/database"
@@ -39,17 +42,21 @@ func main() {
 	defer utils.CloseRedis()
 
 	// Start Auto-Pay background scheduler
-	startAutoPayScheduler()
+	autoPayCtx, autoPayCancel := context.WithCancel(context.Background())
+	defer autoPayCancel()
+	startAutoPayScheduler(autoPayCtx)
 
 	// Start Telegram Reminder background scheduler
-	startReminderScheduler()
+	reminderCtx, reminderCancel := context.WithCancel(context.Background())
+	defer reminderCancel()
+	startReminderScheduler(reminderCtx)
 
 	// 4. Setup router
 	mux := http.NewServeMux()
 
 	// Public Routes
-	mux.HandleFunc("POST /api/auth/register", handlers.RegisterHandler)
 	mux.HandleFunc("POST /api/auth/login", handlers.LoginHandler)
+	mux.HandleFunc("POST /api/auth/register", handlers.RegisterHandler)
 	mux.HandleFunc("POST /api/auth/logout", handlers.LogoutHandler)
 
 	// Secured Routes Wrapper
@@ -128,13 +135,50 @@ func main() {
 	// ✅ PERF: Request timeout — prevents slow queries from holding connections forever
 	handler = http.TimeoutHandler(handler, 30*time.Second, `{"error":"request timeout"}`)
 
-	// 5. Start Server
+	// 5. Start Server with graceful shutdown
 	host := getEnv("HOST", "0.0.0.0")
 	port := getEnv("PORT", "8080")
 	bindAddr := host + ":" + port
-	fmt.Printf("🚀 Maybe Finance Backend running on http://%s\n", bindAddr)
-	if err := http.ListenAndServe(bindAddr, handler); err != nil {
-		log.Fatalf("❌ Server failed: %v", err)
+
+	srv := &http.Server{
+		Addr:         bindAddr,
+		Handler:      handler,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+
+	// Channel to listen for errors from the server
+	serverErrors := make(chan error, 1)
+
+	go func() {
+		fmt.Printf("🚀 Maybe Finance Backend running on http://%s\n", bindAddr)
+		serverErrors <- srv.ListenAndServe()
+	}()
+
+	// Listen for OS signals (SIGINT = Ctrl+C, SIGTERM = Docker/K8s stop)
+	shutdown := make(chan os.Signal, 1)
+	signal.Notify(shutdown, os.Interrupt, syscall.SIGTERM)
+
+	select {
+	case err := <-serverErrors:
+		log.Fatalf("❌ Server error: %v", err)
+	case sig := <-shutdown:
+		log.Printf("🛑 Shutdown signal received (%v). Draining active connections...", sig)
+
+		// Cancel scheduler contexts
+		autoPayCancel()
+		reminderCancel()
+
+		// Give outstanding requests 10 seconds to complete
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		if err := srv.Shutdown(ctx); err != nil {
+			log.Printf("⚠️ Graceful shutdown timed out: %v", err)
+			srv.Close()
+		}
+		log.Println("✅ Server stopped gracefully")
 	}
 }
 
@@ -306,7 +350,7 @@ func gzipMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func startAutoPayScheduler() {
+func startAutoPayScheduler(ctx context.Context) {
 	log.Println("⏰ Auto-Pay background scheduler started")
 	
 	// Check immediately on startup, then every 4 hours
@@ -314,8 +358,15 @@ func startAutoPayScheduler() {
 	
 	ticker := time.NewTicker(4 * time.Hour)
 	go func() {
-		for range ticker.C {
-			checkAutoPayBills()
+		for {
+			select {
+			case <-ctx.Done():
+				ticker.Stop()
+				log.Println("⏰ Auto-Pay scheduler stopped")
+				return
+			case <-ticker.C:
+				checkAutoPayBills()
+			}
 		}
 	}()
 }
@@ -417,16 +468,23 @@ func checkAutoPayBills() {
 	}
 }
 
-func startReminderScheduler() {
+func startReminderScheduler(ctx context.Context) {
 	log.Println("⏰ Reminder background scheduler started")
 	
-	// Check immediately on startup, then every 1 minute
+	// Check immediately on startup, then every 5 minutes
 	go handlers.CheckReminderBills()
 	
-	ticker := time.NewTicker(1 * time.Minute)
+	ticker := time.NewTicker(5 * time.Minute)
 	go func() {
-		for range ticker.C {
-			handlers.CheckReminderBills()
+		for {
+			select {
+			case <-ctx.Done():
+				ticker.Stop()
+				log.Println("⏰ Reminder scheduler stopped")
+				return
+			case <-ticker.C:
+				handlers.CheckReminderBills()
+			}
 		}
 	}()
 }

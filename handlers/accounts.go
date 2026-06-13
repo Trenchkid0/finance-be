@@ -12,8 +12,8 @@ import (
 )
 
 type AccountRequest struct {
-	Name     string               `json:"name"`
-	Type     database.AccountType `json:"type"`
+	Name     string               `json:"name" validate:"required"`
+	Type     database.AccountType `json:"type" validate:"required,oneof=bank|wallet|cash|investment"`
 	Balance  float64              `json:"balance"`
 	Currency string               `json:"currency"`
 	Icon     string               `json:"icon"`
@@ -106,8 +106,7 @@ func AccountsHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if req.Name == "" || req.Type == "" {
-			utils.ErrorResponse(w, http.StatusBadRequest, "Name and Type are required")
+		if !middleware.ValidateAndRespond(w, req) {
 			return
 		}
 
