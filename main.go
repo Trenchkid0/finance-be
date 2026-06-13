@@ -167,6 +167,53 @@ func loadEnv() {
 	}
 }
 
+func isLocalNetworkOrigin(origin string) bool {
+	// Must start with http:// or https://
+	if !strings.HasPrefix(origin, "http://") && !strings.HasPrefix(origin, "https://") {
+		return false
+	}
+
+	// Strip scheme
+	host := origin
+	if strings.HasPrefix(host, "http://") {
+		host = host[7:]
+	} else if strings.HasPrefix(host, "https://") {
+		host = host[8:]
+	}
+
+	// Strip port if present
+	if idx := strings.Index(host, ":"); idx != -1 {
+		host = host[:idx]
+	}
+
+	// Check if localhost or 127.0.0.1
+	if host == "localhost" || host == "127.0.0.1" {
+		return true
+	}
+
+	// Check private network patterns (IPv4)
+	if strings.HasPrefix(host, "192.168.") {
+		return true
+	}
+	if strings.HasPrefix(host, "100.") {
+		return true
+	}
+	if strings.HasPrefix(host, "172.") {
+		// 172.16.0.0 - 172.31.255.255
+		parts := strings.Split(host, ".")
+		if len(parts) >= 2 {
+			var secondOctet int
+			if _, err := fmt.Sscanf(parts[1], "%d", &secondOctet); err == nil {
+				if secondOctet >= 16 && secondOctet <= 31 {
+					return true
+				}
+			}
+		}
+	}
+
+	return false
+}
+
 func corsMiddleware(next http.Handler, allowedOrigin string) http.Handler {
 	allowAll := allowedOrigin == "*"
 
@@ -200,7 +247,7 @@ func corsMiddleware(next http.Handler, allowedOrigin string) http.Handler {
 		if allowAll && origin != "" {
 			// ✅ ALLOWED_ORIGIN=* → reflect request origin (works with credentials)
 			w.Header().Set("Access-Control-Allow-Origin", origin)
-		} else if origin != "" && allowedOrigins[origin] {
+		} else if origin != "" && (allowedOrigins[origin] || isLocalNetworkOrigin(origin)) {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 		} else if origin == "" {
 			w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
