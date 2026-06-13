@@ -115,7 +115,7 @@ func main() {
 	mux.Handle("GET /uploads/", http.StripPrefix("/uploads", uploadsFS))
 
 	// Apply CORS
-	allowedOrigin := getEnv("ALLOWED_ORIGIN", "http://localhost:5173")
+	allowedOrigin := getEnv("ALLOWED_ORIGIN", "*")
 	handler := corsMiddleware(mux, allowedOrigin)
 
 	// ✅ PERF: Gzip compression — reduces JSON payload size 60–80%
@@ -168,6 +168,8 @@ func loadEnv() {
 }
 
 func corsMiddleware(next http.Handler, allowedOrigin string) http.Handler {
+	allowAll := allowedOrigin == "*"
+
 	// Build allowed origins set from env + common dev ports
 	allowedOrigins := map[string]bool{
 		allowedOrigin: true,
@@ -194,14 +196,18 @@ func corsMiddleware(next http.Handler, allowedOrigin string) http.Handler {
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
-		if origin != "" && allowedOrigins[origin] {
+
+		if allowAll && origin != "" {
+			// ✅ ALLOWED_ORIGIN=* → reflect request origin (works with credentials)
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+		} else if origin != "" && allowedOrigins[origin] {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 		} else if origin == "" {
 			w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
 		} else {
-			// Origin not allowed — log and reject
 			fmt.Printf("⚠️ CORS blocked origin: %s\n", origin)
 		}
+
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
