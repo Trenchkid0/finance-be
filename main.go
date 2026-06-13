@@ -14,6 +14,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	_ "time/tzdata"
 
 	"maybe-finance-backend/database"
 	"maybe-finance-backend/handlers"
@@ -22,6 +23,16 @@ import (
 )
 
 func main() {
+	// Set global timezone to Asia/Jakarta (WIB)
+	loc, err := time.LoadLocation("Asia/Jakarta")
+	if err == nil {
+		time.Local = loc
+		log.Println("🌐 Timezone configured to Asia/Jakarta (WIB) globally")
+	} else {
+		time.Local = time.FixedZone("WIB", 7*60*60)
+		log.Printf("🌐 Failed to load Asia/Jakarta timezone, using fallback WIB offset: %v", err)
+	}
+
 	// 1. Load env variables from .env file if it exists
 	loadEnv()
 
@@ -31,7 +42,7 @@ func main() {
 	dbPath = strings.TrimPrefix(dbPath, "file:")
 	dbPath = strings.TrimPrefix(dbPath, "sqlite:")
 
-	_, err := database.InitDB(dbPath)
+	_, err = database.InitDB(dbPath)
 	if err != nil {
 		log.Fatalf("❌ Database init failed: %v", err)
 	}

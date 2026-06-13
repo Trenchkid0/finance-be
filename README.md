@@ -30,7 +30,10 @@ backend/
 ├── handlers/
 │   ├── auth.go                  # Authentication (register, login, logout, profile)
 │   ├── accounts.go              # Account CRUD operations
-│   ├── transactions.go          # Transaction management, CSV export/import
+│   ├── transactions.go          # Transaction list + create/update
+│   ├── transactions_detail.go   # Single transaction detail + delete
+│   ├── transactions_export.go   # CSV export handler
+│   ├── transactions_import.go   # CSV import with batch insert
 │   ├── categories.go            # Category management
 │   ├── budgets.go               # Budget tracking
 │   ├── goals.go                 # Savings goals
@@ -42,10 +45,13 @@ backend/
 │   ├── telegram.go              # Telegram bot integration
 │   ├── telegram_webhook.go      # Telegram webhook handler
 │   ├── upload.go                # File upload (receipts)
+│   ├── upload_webp.go           # WebP image conversion
+│   ├── upload_nowebp.go         # Fallback upload without WebP
 │   ├── api_keys.go              # API key management for external integrations
 │   └── ...
 ├── middleware/
-│   └── auth.go                  # JWT authentication middleware, CORS
+│   ├── auth.go                  # JWT authentication middleware
+│   └── validate.go              # Struct validation (required, min, max, email, oneof)
 ├── services/
 │   ├── deepseek.go              # DeepSeek AI API client
 │   └── cache_example.go         # Redis caching examples
@@ -54,7 +60,7 @@ backend/
 │   ├── cache_helpers.go         # Cache invalidation utilities
 │   └── helpers.go               # General utility functions
 ├── uploads/                     # Uploaded receipt images
-├── main.go                      # Application entry point & route registration
+├── main.go                      # Application entry point, route registration, schedulers
 ├── maybe.db                     # SQLite database (auto-created)
 ├── Dockerfile                   # Multi-stage Docker build
 ├── start-backend.sh             # Linux/macOS startup script
@@ -435,7 +441,7 @@ A secondary background scheduler runs to trigger Telegram alerts for upcoming ma
 - **JWT Authentication**: Secure token-based auth with expiration
 - **CORS Protection**: Configurable allowed origins with local network detection
 - **API Key Hashing**: SHA-256 hashed API tokens
-- **Input Validation**: Strict type checking and validation
+- **Request Validation**: Reflection-based struct validation middleware (`validate` tags: required, min, max, email, oneof)
 - **SQL Injection Prevention**: GORM parameterized queries
 
 ---
