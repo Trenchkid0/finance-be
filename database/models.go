@@ -135,21 +135,24 @@ type SavingsGoal struct {
 
 // RecurringBill represents recurring expenses/subscriptions.
 type RecurringBill struct {
-	ID         string          `gorm:"primaryKey;type:varchar(191)" json:"id"`
-	UserID     string          `gorm:"index;type:varchar(191);not null" json:"userId"`
-	Name       string          `gorm:"type:varchar(191);not null" json:"name"`
-	Amount     float64         `gorm:"type:decimal(15,2);not null" json:"amount"`
-	CategoryID *string         `gorm:"type:varchar(191)" json:"categoryId"`
-	Frequency  string          `gorm:"type:varchar(50);default:'monthly';not null" json:"frequency"` // "weekly", "monthly", "yearly"
-	DayOfMonth int             `gorm:"default:1;not null" json:"dayOfMonth"`
-	AutoPay    bool            `gorm:"default:false;not null" json:"autoPay"`
-	AccountID  *string         `gorm:"type:varchar(191)" json:"accountId"`
-	LastPaidAt *time.Time      `json:"lastPaidAt,omitempty"`
-	Note       string          `gorm:"type:text" json:"note"`
-	Category   *Category       `gorm:"foreignKey:CategoryID" json:"category,omitempty"`
-	Account    *FinanceAccount `gorm:"foreignKey:AccountID" json:"account,omitempty"`
-	CreatedAt  time.Time       `json:"createdAt"`
-	UpdatedAt  time.Time       `json:"updatedAt"`
+	ID                 string          `gorm:"primaryKey;type:varchar(191)" json:"id"`
+	UserID             string          `gorm:"index;type:varchar(191);not null" json:"userId"`
+	Name               string          `gorm:"type:varchar(191);not null" json:"name"`
+	Amount             float64         `gorm:"type:decimal(15,2);not null" json:"amount"`
+	CategoryID         *string         `gorm:"type:varchar(191)" json:"categoryId"`
+	Frequency          string          `gorm:"type:varchar(50);default:'monthly';not null" json:"frequency"` // "weekly", "monthly", "yearly"
+	DayOfMonth         int             `gorm:"default:1;not null" json:"dayOfMonth"`
+	AutoPay            bool            `gorm:"default:false;not null" json:"autoPay"`
+	AccountID          *string         `gorm:"type:varchar(191)" json:"accountId"`
+	LastPaidAt         *time.Time      `json:"lastPaidAt,omitempty"`
+	ReminderDaysBefore *int            `json:"reminderDaysBefore,omitempty"`
+	ReminderTime       *string         `gorm:"type:varchar(10)" json:"reminderTime,omitempty"`
+	LastRemindedAt     *time.Time      `json:"lastRemindedAt,omitempty"`
+	Note               string          `gorm:"type:text" json:"note"`
+	Category           *Category       `gorm:"foreignKey:CategoryID" json:"category,omitempty"`
+	Account            *FinanceAccount `gorm:"foreignKey:AccountID" json:"account,omitempty"`
+	CreatedAt          time.Time       `json:"createdAt"`
+	UpdatedAt          time.Time       `json:"updatedAt"`
 }
 
 // AssetHolding tracks real stock/investment assets.

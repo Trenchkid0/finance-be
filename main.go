@@ -41,6 +41,9 @@ func main() {
 	// Start Auto-Pay background scheduler
 	startAutoPayScheduler()
 
+	// Start Telegram Reminder background scheduler
+	startReminderScheduler()
+
 	// 4. Setup router
 	mux := http.NewServeMux()
 
@@ -412,4 +415,18 @@ func checkAutoPayBills() {
 		_ = utils.CacheInvalidateUser(bill.UserID)
 		log.Printf("⏰ [AutoPay] Successfully paid bill '%s' (Rp %.0f) for user: %s", bill.Name, bill.Amount, bill.UserID)
 	}
+}
+
+func startReminderScheduler() {
+	log.Println("⏰ Reminder background scheduler started")
+	
+	// Check immediately on startup, then every 5 minutes
+	go handlers.CheckReminderBills()
+	
+	ticker := time.NewTicker(5 * time.Minute)
+	go func() {
+		for range ticker.C {
+			handlers.CheckReminderBills()
+		}
+	}()
 }
