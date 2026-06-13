@@ -1,214 +1,524 @@
 # Maybe Finance — Go Backend API
 
-Pondasi API untuk aplikasi **Maybe Finance** (atau Racks Finance). Dibuat menggunakan **Go (Golang)**, **GORM**, dan mendukung database **SQLite** atau **MySQL**. Backend ini menyediakan autentikasi berbasis JWT, manajemen keuangan, integrasi bot Telegram, serta pemrosesan AI (DeepSeek & OCR Tesseract) untuk pemindaian struk belanja dan analisis kesehatan finansial.
+A robust, high-performance REST API for the **Maybe Finance** personal finance management application. Built with **Go (Golang)**, **GORM**, and supporting both **SQLite** (development) and **MySQL** (production) databases. Features JWT authentication, Redis caching, Telegram bot integration, AI-powered receipt scanning (DeepSeek + OCR Tesseract), and comprehensive financial analytics.
 
 ---
 
 ## 🛠️ Tech Stack
 
-- **Core:** Go (Golang) versi 1.25+
-- **HTTP Server:** Go standard `net/http` router (multiplexer baru di Go 1.22+)
-- **ORM:** GORM (`gorm.io/gorm`)
-- **Database:** SQLite (default untuk lokal) / MySQL (siap produksi)
-- **Auth:** JWT (JSON Web Tokens) & Custom Cookies/Authorization Header
-- **AI Integrasi:** DeepSeek API untuk OCR receipt parsing & financial insights
+| Component | Technology | Version |
+|-----------|-----------|---------|
+| **Language** | Go (Golang) | 1.25+ |
+| **HTTP Server** | Standard `net/http` | Go 1.22+ router with path parameters |
+| **ORM** | GORM | Latest |
+| **Database** | SQLite / MySQL | Flexible |
+| **Cache** | Redis | Optional, graceful degradation |
+| **Authentication** | JWT | Custom cookies + Bearer tokens |
+| **AI Integration** | DeepSeek API | OCR receipt parsing & financial insights |
+| **Image Processing** | WebP conversion | Receipt image optimization |
 
 ---
 
-## 📂 Struktur Direktori
+## 📂 Project Structure
 
-```text
+```
 backend/
-├── database/            # Inisialisasi GORM, koneksi DB, & seeding data demo
-├── handlers/            # REST API Handlers (users, accounts, transactions, dll)
-├── middleware/          # JWT Auth Guard, CORS, & logging
-├── services/            # Service eksternal (DeepSeek JSON API)
-├── utils/               # Fungsi pembantu (helper, formatting, JSON error responder)
-├── main.go              # Entry point utama & registrasi routing
-├── maybe.db             # File database SQLite (terbuat otomatis)
-├── start-backend.ps1    # Script runner untuk Windows
-└── start-backend.sh     # Script runner untuk macOS/Linux
+├── database/
+│   ├── db.go                    # GORM initialization, migrations, demo seeding
+│   ├── models.go                # Database model definitions
+│   └── migrations/              # SQL migration files (performance indexes)
+├── handlers/
+│   ├── auth.go                  # Authentication (register, login, logout, profile)
+│   ├── accounts.go              # Account CRUD operations
+│   ├── transactions.go          # Transaction management, CSV export/import
+│   ├── categories.go            # Category management
+│   ├── budgets.go               # Budget tracking
+│   ├── goals.go                 # Savings goals
+│   ├── recurring.go             # Recurring bills & auto-pay
+│   ├── investments.go           # Investment portfolio (buy/sell assets)
+│   ├── ai.go                    # AI receipt scanning (DeepSeek OCR)
+│   ├── insights.go              # Financial health scoring & AI insights
+│   ├── summary.go               # Dashboard summary statistics
+│   ├── telegram.go              # Telegram bot integration
+│   ├── telegram_webhook.go      # Telegram webhook handler
+│   ├── upload.go                # File upload (receipts)
+│   ├── api_keys.go              # API key management for external integrations
+│   └── ...
+├── middleware/
+│   └── auth.go                  # JWT authentication middleware, CORS
+├── services/
+│   ├── deepseek.go              # DeepSeek AI API client
+│   └── cache_example.go         # Redis caching examples
+├── utils/
+│   ├── redis.go                 # Redis client initialization & cache helpers
+│   ├── cache_helpers.go         # Cache invalidation utilities
+│   └── helpers.go               # General utility functions
+├── uploads/                     # Uploaded receipt images
+├── main.go                      # Application entry point & route registration
+├── maybe.db                     # SQLite database (auto-created)
+├── Dockerfile                   # Multi-stage Docker build
+├── start-backend.sh             # Linux/macOS startup script
+├── test-api.ps1                 # API endpoint testing script
+└── test-backend.ps1             # Backend verification script
 ```
 
 ---
 
-## 🔑 Database Schema (GORM Models)
+## 🗄️ Database Schema
 
-Database dimigrasi secara otomatis saat server berjalan. Model utama meliputi:
+The database is automatically migrated on first run. Core models:
 
-1. **User:** Informasi kredensial & enkripsi password (bcrypt).
-2. **FinanceAccount:** Menyimpan detail rekening (Bank, E-Wallet, Cash, Investment) beserta saldo aktual.
-3. **Category:** Kategori pos pengeluaran/pemasukan milik user.
-4. **Transaction:** Catatan alur kas masuk/keluar, terikat dengan `FinanceAccount` & `Category`.
-5. **Budget:** Batasan belanja bulanan per kategori.
-6. **Goal:** Target tabungan (saving goals).
-7. **RecurringBill:** Tagihan berkala bulanan/tahunan (misal: Netflix, Listrik).
-8. **ApiKey:** Token rahasia khusus untuk integrasi client eksternal (seperti Bot Telegram).
+### User
+- User credentials, profile, Telegram integration
+- Password hashed with bcrypt
+- Relations: accounts, categories, transactions, budgets, goals, API keys
+
+### FinanceAccount
+- Multiple account types: Bank, Wallet, Cash, Investment
+- Real-time balance tracking
+- Custom icons and colors
+- Currency support (default: IDR)
+
+### Transaction
+- Income, Expense, Transfer types
+- Linked to accounts and categories
+- Receipt image attachments
+- Transfer between accounts support
+- CSV export/import capabilities
+
+### Category
+- User-defined income/expense categories
+- Default system categories
+- Custom icons and colors
+
+### Budget
+- Monthly spending limits per category
+- Real-time budget vs actual tracking
+
+### SavingsGoal
+- Target amount and deadline
+- Progress tracking
+- Optional account linking
+
+### RecurringBill
+- Recurring expenses (Netflix, utilities, etc.)
+- Frequency: weekly, monthly, yearly
+- **Auto-pay feature**: Automatically creates transactions on due date
+- Telegram notifications
+
+### AssetHolding
+- Investment portfolio tracking
+- Stock symbols, quantities, buy/current prices
+- Real-time P&L calculation
+
+### ApiKey
+- Secure API tokens for external integrations (Telegram bot)
+- SHA-256 hashed keys
+- Usage tracking and revocation
 
 ---
 
 ## 📡 API Endpoints
 
-Semua endpoint dilindungi oleh middleware autentikasi, kecuali endpoint publik:
-
 ### 🔓 Public Routes
-- `POST /api/auth/register` - Registrasi pengguna baru
-- `POST /api/auth/login` - Login pengguna & menyimpan session cookie/token
-- `POST /api/auth/logout` - Logout pengguna & membersihkan session cookie
 
-### 🔒 Protected Routes (Membutuhkan header `Authorization: Bearer <token>` atau Session Cookie)
-- **Auth & Profile:**
-  - `GET /api/auth/me` - Ambil data profil pengguna yang login
-  - `PUT /api/auth/me` - Update data profil (nama, mata uang default)
-- **Accounts (Rekening):**
-  - `GET /api/accounts` - Ambil daftar rekening aktif beserta saldonya
-  - `POST /api/accounts` - Tambahkan rekening baru
-  - `GET /api/accounts/{id}` - Detail riwayat rekening spesifik
-  - `PUT /api/accounts/{id}` - Edit data/nama/tipe rekening
-  - `DELETE /api/accounts/{id}` - Hapus/nonaktifkan rekening
-- **Transactions:**
-  - `GET /api/transactions` - Daftar transaksi dengan pencarian & filter
-  - `POST /api/transactions` - Buat transaksi baru (otomatis menyesuaikan saldo rekening)
-  - `GET /api/transactions/export` - Ekspor daftar transaksi dalam format CSV
-- **Budgets & Goals:**
-  - `GET /api/budgets` - Lihat alokasi anggaran bulanan vs realisasi pengeluaran
-  - `POST /api/budgets` - Set target anggaran kategori baru
-  - `GET /api/goals` - Daftar target tabungan & progres capaian
-- **AI Features:**
-  - `POST /api/ai/scan` - Mengirim teks OCR struk belanja untuk diparsing otomatis oleh AI (DeepSeek)
-  - `GET /api/ai/insights` - Kalkulasi skor kesehatan finansial, dana darurat, & saran dari AI
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/auth/register` | Register new user |
+| POST | `/api/auth/login` | Login (returns JWT token + cookie) |
+| POST | `/api/auth/logout` | Logout (clears session cookie) |
+| POST | `/webhook/telegram` | Telegram webhook (public, called by Telegram) |
+
+### 🔒 Protected Routes (Require `Authorization: Bearer <token>` or session cookie)
+
+#### Auth & Profile
+- `GET /api/auth/me` — Get current user profile
+- `PUT /api/auth/me` — Update profile (name, currency, Telegram ID)
+
+#### Accounts
+- `GET /api/accounts` — List all accounts with balances
+- `POST /api/accounts` — Create new account
+- `GET /api/accounts/{id}` — Get account details with transaction history
+- `PUT /api/accounts/{id}` — Update account
+- `DELETE /api/accounts/{id}` — Delete account
+
+#### Transactions
+- `GET /api/transactions` — List transactions (with filters, search, pagination)
+- `POST /api/transactions` — Create transaction (auto-updates account balance)
+- `GET /api/transactions/export` — Export transactions as CSV
+- `POST /api/transactions/import` — Import transactions from CSV
+- `GET /api/transactions/{id}` — Get transaction details
+- `PUT /api/transactions/{id}` — Update transaction
+- `DELETE /api/transactions/{id}` — Delete transaction
+
+#### Categories
+- `GET /api/categories` — List all categories
+- `POST /api/categories` — Create category
+
+#### Budgets
+- `GET /api/budgets` — List budgets with spending progress
+- `POST /api/budgets` — Create/update budget
+- `DELETE /api/budgets/{id}` — Delete budget
+
+#### Goals
+- `GET /api/goals` — List savings goals with progress
+- `POST /api/goals` — Create goal
+- `PUT /api/goals/{id}` — Update goal
+- `DELETE /api/goals/{id}` — Delete goal
+
+#### Recurring Bills
+- `GET /api/recurring` — List recurring bills
+- `POST /api/recurring` — Create recurring bill
+- `PUT /api/recurring/{id}` — Update bill
+- `DELETE /api/recurring/{id}` — Delete bill
+- `POST /api/recurring/{id}/pay` — Manually pay bill
+- `POST /api/recurring/test-telegram` — Test Telegram notification
+
+#### Investments
+- `GET /api/investments` — Get investment portfolio with P&L
+- `POST /api/investments/buy` — Buy asset
+- `POST /api/investments/sell` — Sell asset
+- `POST /api/investments/update-price` — Update asset current price
+
+#### AI Features
+- `POST /api/ai/scan` — Scan receipt image (OCR + AI parsing)
+- `GET /api/ai/insights` — Get financial health score & AI recommendations
+
+#### Summary & Analytics
+- `GET /api/summary` — Dashboard statistics (net worth, income, expenses, trends)
+
+#### API Keys
+- `GET /api/api-keys` — List API keys
+- `POST /api/api-keys` — Generate new API key
+- `DELETE /api/api-keys/{id}` — Revoke API key
+
+#### File Upload
+- `POST /api/upload/receipt` — Upload receipt image
 
 ---
 
-## 🚀 Panduan Memulai
+## 🚀 Getting Started
 
-### 1. File Konfigurasi (`.env`)
-Salin atau buat file `.env` di direktori `backend/`:
+### Prerequisites
+
+- **Go 1.25+** installed ([Download Go](https://golang.org/dl/))
+- **Redis server** (optional, for caching)
+- **DeepSeek API key** (optional, for AI features)
+
+### 1. Environment Configuration
+
+Create a `.env` file in the `backend/` directory:
+
 ```env
+# Server Configuration
 PORT=8080
-DATABASE_URL=maybe.db
-ALLOWED_ORIGIN=http://localhost:5173
-DEEPSEEK_API_KEY=your_deepseek_api_key_here  # Opsional untuk fitur AI
+HOST=0.0.0.0
+
+# Database
+DATABASE_URL=maybe.db                    # SQLite (default)
+# DATABASE_URL=mysql://user:pass@tcp(localhost:3306)/maybe_finance  # MySQL
+
+# CORS
+ALLOWED_ORIGIN=http://localhost:5173     # Frontend URL
+ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8080  # Multiple origins
+
+# Redis Cache (Optional)
+REDIS_ENABLED=true
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_PASSWORD=
+REDIS_DB=0
+
+# AI Features (Optional)
+DEEPSEEK_API_KEY=your_deepseek_api_key_here
+
+# Telegram Bot (Optional)
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token
 ```
 
-### 2. Menjalankan Server secara Lokal
-Untuk menjalankan server secara instan:
-* **Windows (PowerShell):**
-  ```powershell
-  ./start-backend.ps1
-  ```
-* **macOS / Linux:**
-  ```bash
-  chmod +x start-backend.sh
-  ./start-backend.sh
-  ```
-* **Go CLI langsung:**
-  ```bash
-  go run main.go
-  ```
+### 2. Running the Server
 
-Saat server pertama kali dijalankan, sistem akan otomatis melakukan migrasi database dan melakukan *seeding* akun demo:
-- **Email:** `demo@maybe.local`
-- **Password:** `password123`
+**Development Mode:**
 
-### 3. Menguji Integrasi API
-Anda dapat menjalankan script verifikasi endpoint untuk memastikan API berjalan sempurna:
-```powershell
-./test-api.ps1
-```
-
-### 🐳 4. Menjalankan via Docker
-Kami telah menyediakan `Dockerfile` multi-stage minimalis untuk memudahkan deployment:
 ```bash
-# 1. Build image docker
+# Navigate to backend directory
+cd maybe-finance/backend
+
+# Run the server
+go run main.go
+```
+
+**Using Startup Scripts:**
+
+```bash
+# Linux/macOS
+chmod +x start-backend.sh
+./start-backend.sh
+
+# Windows (PowerShell)
+./start-backend.ps1
+```
+
+**Build and Run Production Binary:**
+
+```bash
+go build -o maybe-backend main.go
+./maybe-backend
+```
+
+The server starts on `http://localhost:8080` (or configured PORT).
+
+**Demo Account (Auto-seeded):**
+- Email: `demo@maybe.local`
+- Password: `password123`
+
+### 3. Testing the API
+
+```bash
+# Run automated API tests (Windows PowerShell)
+./test-api.ps1
+
+# Run backend verification
+./test-backend.ps1
+
+# Run Go tests
+go test ./...
+```
+
+### 🐳 4. Docker Deployment
+
+```bash
+# Build Docker image
 docker build -t maybe-finance-backend .
 
-# 2. Jalankan container
-# Disarankan mount volume '/app/data' agar database SQLite tetap persisten
+# Run container with persistent volume
 docker run -d \
   -p 8080:8080 \
   -v maybe-db-volume:/app/data \
+  -e DATABASE_URL=/app/data/maybe.db \
+  -e REDIS_ENABLED=false \
   --name maybe-backend \
   maybe-finance-backend
 ```
 
 ---
 
-## 🤖 Integrasi Bot Telegram & Fitur Receipt Scan
-Backend ini menyediakan endpoint API Key (`/api/api-keys`) agar bot Telegram (`bot-keuangan`) dapat berinteraksi secara aman.
-1. Dapatkan API Key di halaman **Settings -> API Keys** pada dashboard web.
-2. Tempel key tersebut pada konfigurasi `.env` milik bot untuk menyinkronkan data saldo & transaksi secara instan.
+## ⚡ Performance Optimizations
 
-### 🆔 Menghubungkan & Mendapatkan Telegram Chat ID
-Untuk menghubungkan akun Telegram pengguna dengan dashboard web (berguna untuk notifikasi atau pengelolaan otomatis):
-- **Otomatis via Bot:**
-  Ketika bot Telegram berjalan dan pengguna mengirim pesan pertama kali (misalnya `/start` atau `/help`), middleware bot secara otomatis akan menangkap `chat.id` pengguna dan mengirimkannya ke database backend via endpoint `PUT /api/auth/me` untuk disimpan di profil pengguna (`telegramChatId`).
-- **Mendapatkan Chat ID Secara Manual:**
-  1. Mulai percakapan dengan bot Telegram Anda.
-  2. Kirim perintah `/start` atau `/help`.
-  3. Bot akan membalas dengan pesan bantuan dan menyantumkan **Telegram Chat ID Anda** berupa angka unik (misal: `123456789`).
-  4. Anda dapat menggunakan ID ini untuk pengetesan manual API atau integrasi scheduler notifikasi backend.
+### Redis Caching
 
-### 📸 Alur Unggah Struk Belanja (Receipt Scan)
-Bot Telegram dan web app mendukung pengunggahan foto struk belanja:
-- **Alur Scan AI Bot:**
-  Kirim foto struk -> Bot membaca tulisan lewat OCR -> Hasil dianalisis AI (DeepSeek) -> Disimpan ke database dengan flag indikator struk.
-- **Alur Input Manual Bot:**
-  Masukkan data transaksi -> Bot bertanya "Ingin melampirkan foto struk?" -> Kirim foto struk (opsional) atau ketik 'skip'.
+Redis integration provides significant performance improvements with graceful degradation:
 
----
+**Features:**
+- **Graceful Degradation**: Falls back to direct database queries if Redis is unavailable
+- **Pattern-based Invalidation**: Automatically clears cache after data mutations (POST, PUT, DELETE)
+- **User-scoped Cache**: Isolates cache per user for data privacy
+- **Sync.Pool for Gzip**: Reuses gzip writers to reduce memory allocation
 
-## ⚡ Redis Caching
-Cashing menggunakan Redis telah diintegrasikan untuk meningkatkan performa response dan mengurangi beban kueri database.
+**Cache TTL Strategy:**
+- **Short (5 min)**: Frequently changing data (transactions, balances)
+- **Medium (30 min)**: Moderate changes (accounts, categories)
+- **Long (2 hours)**: Rarely changing data (user profile, settings)
 
-### 1. Konfigurasi (.env)
-Tambahkan variabel berikut ke file `.env` di folder backend:
-```env
-REDIS_HOST=100.86.12.111      # Hostname / IP Server Redis
-REDIS_PORT=6379               # Port Redis (default: 6379)
-REDIS_PASSWORD=               # Password Redis (kosongkan jika tanpa auth)
-REDIS_DB=0                    # Database index Redis (0-15)
-REDIS_ENABLED=true            # Set true untuk mengaktifkan cache
+### Gzip Compression
+
+All JSON responses are compressed using gzip, reducing payload size by **60-80%**:
+
+```go
+// Automatic compression for clients with Accept-Encoding: gzip
+handler = gzipMiddleware(handler)
 ```
 
-### 2. Fitur Utama
-- **Graceful Degradation**: Server backend tetap berjalan normal menggunakan database secara langsung jika server Redis mati/offline.
-- **Pattern-based Invalidation**: Membersihkan cache secara instan setelah adanya mutasi data (POST, PUT, DELETE) agar data selalu sinkron.
-- **User-scoped Cache**: Isolasi cache per-user untuk menjaga privasi keamanan data keuangan masing-masing pengguna.
+### Request Timeout
 
-### 3. Durasi Cache (TTL)
-- **Short (5 Menit)**: Data yang sering berubah (daftar transaksi, saldo terkini).
-- **Medium (30 Menit)**: Data berfrekuensi perubahan sedang (daftar rekening, kategori).
-- **Long (2 Jam)**: Data yang jarang berubah (profil pengguna, pengaturan sistem).
+Prevents slow queries from holding connections:
 
----
+```go
+handler = http.TimeoutHandler(handler, 30*time.Second, `{"error":"request timeout"}`)
+```
 
-## 🧪 Panduan Pengujian & Testing
+### Database Indexes
 
-### 1. Menjalankan Uji Otomatis
-Gunakan skrip pengujian bawaan di direktori `backend/`:
-- **Windows (PowerShell):**
-  - `./test-backend.ps1`: Melakukan verifikasi file database, port, dan meluncurkan server backend.
-  - `./test-api.ps1`: Menguji semua endpoint utama (Login, Me, Accounts, Transactions) secara otomatis menggunakan cURL.
-- **macOS / Linux:**
-  - `./test-backend.sh` atau `go test ./...`
+Performance indexes on frequently queried fields:
+- `user_id`, `account_id`, `category_id`, `date` on transactions
+- `user_id` on accounts, categories, budgets, goals
+- Composite indexes for complex queries
 
-### 2. Panduan Troubleshooting
-- **Port 8080 Bentrok/Digunakan:**
-  Ubah konfigurasi port di file `.env` (misal: `PORT=8081`) atau matikan proses port 8080 secara paksa di PowerShell:
-  ```powershell
-  Get-NetTCPConnection -LocalPort 8080 | Select-Object -ExpandProperty OwningProcess | Stop-Process -Force
-  ```
-- **Error Database / Ingin Reset Data:**
-  Hapus file SQLite lokal `maybe.db` dan jalankan ulang backend server untuk melakukan migrasi & seeding data demo otomatis:
-  ```powershell
-  Remove-Item maybe.db
-  ./test-backend.ps1
-  ```
+See `database/migrations/001_add_performance_indexes.sql` for details.
 
 ---
 
-## 🎨 Arsitektur Tema & Pewarnaan
-Sistem kustomisasi tema visual sepenuhnya didelegasikan di sisi klien (frontend) menggunakan standardisasi CSS custom properties.
-- **Penyimpanan:** Pilihan tema pengguna disimpan pada peramban melalui `localStorage`.
-- **Decoupled:** Backend tidak memerlukan tabel database tambahan untuk preferensi tema ini, menjamin operasi API tetap ringan dan cepat.
+## 🤖 Telegram Bot Integration
+
+The backend provides API key authentication for the Telegram bot (`bot-keuangan`) to securely interact with user accounts.
+
+### Setup Flow
+
+1. **Generate API Key**: In the web dashboard, go to **Settings → API Keys** and create a new key
+2. **Configure Bot**: Add the API key to the bot's `.env` file
+3. **Auto-sync**: Bot transactions automatically sync to the dashboard
+
+### Telegram Chat ID Linking
+
+**Automatic (via Bot):**
+When a user sends `/start` or `/help` to the bot, the bot captures the `chat.id` and sends it to the backend via `PUT /api/auth/me`, storing it in the user profile (`telegramChatId`).
+
+**Manual:**
+1. Start a conversation with your Telegram bot
+2. Send `/start` or `/help`
+3. Bot replies with your **Telegram Chat ID** (e.g., `123456789`)
+4. Use this ID for manual API testing or notification scheduling
+
+---
+
+## 📸 Receipt Scanning (AI-Powered)
+
+### Upload Flow
+
+**Via Web App:**
+1. Upload receipt image through transaction form
+2. Image saved to `uploads/receipts/`
+3. Optional: Send to AI for OCR parsing
+
+**Via Telegram Bot:**
+1. Send receipt photo to bot
+2. Bot performs OCR
+3. AI (DeepSeek) analyzes and extracts: merchant, items, total amount, date
+4. Transaction auto-created with receipt flag
+
+### AI Scan Endpoint
+
+```bash
+POST /api/ai/scan
+Content-Type: application/json
+
+{
+  "ocrText": "Extracted text from receipt image..."
+}
+```
+
+**Response:**
+```json
+{
+  "merchant": "Starbucks",
+  "total": 85000,
+  "date": "2024-01-15",
+  "items": ["Caffe Latte", "Croissant"],
+  "confidence": 0.95
+}
+```
+
+---
+
+## ⏰ Auto-Pay Scheduler
+
+The backend runs a background scheduler that automatically processes recurring bills with `autoPay` enabled:
+
+- **Frequency**: Checks on startup, then every 4 hours
+- **Logic**: Creates expense transaction on due date, deducts from linked account
+- **Safety**: Transaction-wrapped with rollback on failure
+- **Notifications**: Optional Telegram alerts on successful payment
+
+---
+
+## 🔒 Security Features
+
+- **Password Hashing**: bcrypt with salt rounds
+- **JWT Authentication**: Secure token-based auth with expiration
+- **CORS Protection**: Configurable allowed origins with local network detection
+- **API Key Hashing**: SHA-256 hashed API tokens
+- **Input Validation**: Strict type checking and validation
+- **SQL Injection Prevention**: GORM parameterized queries
+
+---
+
+## 🧪 Testing & Troubleshooting
+
+### Common Issues
+
+**Port 8080 Already in Use:**
+
+```bash
+# Change port in .env
+PORT=8081
+
+# Or kill process on port 8080 (Windows PowerShell)
+Get-NetTCPConnection -LocalPort 8080 | Select-Object -ExpandProperty OwningProcess | Stop-Process -Force
+```
+
+**Database Reset:**
+
+```bash
+# Delete SQLite database and restart (auto-migrates + seeds demo data)
+rm maybe.db
+go run main.go
+```
+
+**Redis Connection Failed:**
+
+Backend automatically falls back to direct database queries. Check Redis configuration in `.env`.
+
+### Running Tests
+
+```bash
+# All tests
+go test ./...
+
+# With coverage
+go test -cover ./...
+
+# Specific package
+go test ./handlers
+```
+
+---
+
+## 📊 Environment Variables Reference
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `8080` | Server port |
+| `HOST` | `0.0.0.0` | Bind address |
+| `DATABASE_URL` | `maybe.db` | Database connection string |
+| `ALLOWED_ORIGIN` | `*` | CORS allowed origin |
+| `ALLOWED_ORIGINS` | `` | Comma-separated additional origins |
+| `REDIS_ENABLED` | `false` | Enable Redis caching |
+| `REDIS_HOST` | `localhost` | Redis server host |
+| `REDIS_PORT` | `6379` | Redis server port |
+| `REDIS_PASSWORD` | `` | Redis password (if auth enabled) |
+| `REDIS_DB` | `0` | Redis database index (0-15) |
+| `DEEPSEEK_API_KEY` | `` | DeepSeek API key for AI features |
+| `TELEGRAM_BOT_TOKEN` | `` | Telegram bot token for notifications |
+
+---
+
+## 🎯 Key Features
+
+✅ **Multi-account Support** — Track bank accounts, wallets, cash, investments  
+✅ **Transaction Management** — Income, expenses, transfers with receipt attachments  
+✅ **Budget Tracking** — Category-based spending limits with progress visualization  
+✅ **Savings Goals** — Visual progress tracking for financial targets  
+✅ **Recurring Bills** — Auto-pay subscriptions and bills with notifications  
+✅ **Investment Portfolio** — Track stocks, crypto with real-time P&L  
+✅ **AI Receipt Scanning** — OCR + DeepSeek AI for automatic transaction extraction  
+✅ **Financial Insights** — AI-powered health scoring and recommendations  
+✅ **CSV Import/Export** — Bulk transaction management  
+✅ **Telegram Integration** — Real-time notifications and bot support  
+✅ **Redis Caching** — High-performance with graceful degradation  
+✅ **Docker Ready** — Multi-stage build for production deployment  
+
+---
+
+## 📝 License
+
+This project is part of the **Maybe Finance** personal finance dashboard.
+
+---
+
+## 🤝 Contributing
+
+For issues, feature requests, or contributions, please open an issue or pull request.
+
+---
+
+**Built with ❤️ using Go, GORM, and Redis**
