@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+	_ "time/tzdata"
 
 	"github.com/google/uuid"
 
@@ -308,7 +309,13 @@ func CheckReminderBills() {
 		return
 	}
 
-	now := time.Now()
+	// Load Asia/Jakarta timezone (GMT+7)
+	loc, err := time.LoadLocation("Asia/Jakarta")
+	if err != nil {
+		log.Printf("⚠️ [Reminder] Failed to load Asia/Jakarta timezone, falling back to Local: %v", err)
+		loc = time.Local
+	}
+	now := time.Now().In(loc)
 
 	for _, bill := range bills {
 		// Find user to get Telegram Chat ID
@@ -340,7 +347,7 @@ func CheckReminderBills() {
 
 		reminderDateTime := time.Date(
 			reminderDate.Year(), reminderDate.Month(), reminderDate.Day(),
-			remHour, remMin, 0, 0, now.Location(),
+			remHour, remMin, 0, 0, loc,
 		)
 
 		// If current time is past the reminder time AND (LastRemindedAt is nil OR LastRemindedAt is before reminderDateTime)
