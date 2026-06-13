@@ -330,6 +330,7 @@ func downloadAndConvertTelegramPhoto(fileID, userID string) (string, error) {
 func sendTelegramMessage(chatID, text string) {
 	token := getTelegramToken()
 	if token == "" {
+		log.Printf("⚠️ [Telegram] Failed to send message: TELEGRAM_BOT_TOKEN or TELEGRAM_TOKEN is not set in env")
 		return
 	}
 
@@ -341,7 +342,19 @@ func sendTelegramMessage(chatID, text string) {
 	}
 
 	jsonPayload, _ := json.Marshal(payload)
-	http.Post(apiURL, "application/json", bytes.NewBuffer(jsonPayload))
+	resp, err := http.Post(apiURL, "application/json", bytes.NewBuffer(jsonPayload))
+	if err != nil {
+		log.Printf("❌ [Telegram] HTTP request failed for chatID %s: %v", chatID, err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		log.Printf("❌ [Telegram] Telegram API returned error status: %s. Response body: %s", resp.Status, string(bodyBytes))
+	} else {
+		log.Printf("✅ [Telegram] Message successfully sent to chatID %s", chatID)
+	}
 }
 
 func getTelegramToken() string {
