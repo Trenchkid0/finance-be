@@ -144,6 +144,22 @@ func RecurringDetailHandler(w http.ResponseWriter, r *http.Request) {
 		bill.DayOfMonth = day
 		bill.AutoPay = req.AutoPay
 		bill.AccountID = req.AccountID
+		// Reset LastRemindedAt if reminder settings are toggled or modified
+		settingsChanged := false
+		if (bill.ReminderDaysBefore == nil && req.ReminderDaysBefore != nil) ||
+			(bill.ReminderDaysBefore != nil && req.ReminderDaysBefore == nil) ||
+			(bill.ReminderDaysBefore != nil && req.ReminderDaysBefore != nil && *bill.ReminderDaysBefore != *req.ReminderDaysBefore) {
+			settingsChanged = true
+		}
+		if (bill.ReminderTime == nil && req.ReminderTime != nil) ||
+			(bill.ReminderTime != nil && req.ReminderTime == nil) ||
+			(bill.ReminderTime != nil && req.ReminderTime != nil && *bill.ReminderTime != *req.ReminderTime) {
+			settingsChanged = true
+		}
+		if settingsChanged {
+			bill.LastRemindedAt = nil
+		}
+
 		bill.ReminderDaysBefore = req.ReminderDaysBefore
 		bill.ReminderTime = req.ReminderTime
 		bill.Note = req.Note
