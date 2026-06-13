@@ -317,14 +317,18 @@ func CheckReminderBills() {
 	}
 	now := time.Now().In(loc)
 
+	log.Printf("⏰ [Reminder] Starting check for %d active bills. Current server time (in Asia/Jakarta): %v", len(bills), now.Format("02-01-2006 15:04:05 MST"))
+
 	for _, bill := range bills {
 		// Find user to get Telegram Chat ID
 		var user database.User
 		if err := db.Where("id = ?", bill.UserID).First(&user).Error; err != nil {
+			log.Printf("🔍 [Reminder] User not found for bill '%s': %v", bill.Name, err)
 			continue
 		}
 
 		if user.TelegramChatID == "" {
+			log.Printf("🔍 [Reminder] Skip bill '%s': User %s has no Telegram Chat ID", bill.Name, user.Email)
 			continue
 		}
 
@@ -350,8 +354,23 @@ func CheckReminderBills() {
 			remHour, remMin, 0, 0, loc,
 		)
 
-		// If current time is past the reminder time AND (LastRemindedAt is nil OR LastRemindedAt is before reminderDateTime)
-		if now.After(reminderDateTime) && (bill.LastRemindedAt == nil || bill.LastRemindedAt.Before(reminderDateTime)) {
+		log.Printf("🔍 [Reminder] Bill '%s': DueDate=%s, TargetReminderTime=%s", 
+			bill.Name, dueDate.Format("02-01-2006"), reminderDateTime.Format("02-01-2006 15:04:05 MST"))
+
+		// Check conditions
+		timePassed := now.After(reminderDateTime)
+		
+		var alreadyReminded bool
+		if bill.LastRemindedAt != nil {
+			lastRemindedLocal := bill.LastRemindedAt.In(loc)
+			alreadyReminded = !lastRemindedLocal.Before(reminderDateTime)
+			log.Printf("🔍 [Reminder] Bill '%s': LastRemindedAt=%s, AlreadyReminded=%t (BeforeTarget=%t)", 
+				bill.Name, lastRemindedLocal.Format("02-01-2006 15:04:05 MST"), alreadyReminded, lastRemindedLocal.Before(reminderDateTime))
+		} else {
+			log.Printf("🔍 [Reminder] Bill '%s': LastRemindedAt=nil", bill.Name)
+		}
+
+		if timePassed && !alreadyReminded {
 			// Preload Category & Account for rich message
 			var detailedBill database.RecurringBill
 			db.Preload("Account").Preload("Category").Where("id = ?", bill.ID).First(&detailedBill)
@@ -395,12 +414,15 @@ func CheckReminderBills() {
 				"<i>Silakan lakukan pembayaran melalui aplikasi Maybe Finance.</i>",
 				bill.Name, dueStr, string(formattedAmount), accountName, categoryName)
 
+			log.Printf("📣 [Reminder] Dispatching Telegram message to %s for bill '%s'", user.TelegramChatID, bill.Name)
 			sendTelegramMessage(user.TelegramChatID, message)
 
 			// Update LastRemindedAt
 			bill.LastRemindedAt = &now
 			db.Save(&bill)
-			log.Printf("⏰ [Reminder] Sent reminder for bill '%s' to user %s", bill.Name, user.ID)
+			log.Printf("⏰ [Reminder] Successfully updated LastRemindedAt for bill '%s'", bill.Name)
+		} else {
+			log.Printf("🔍 [Reminder] Skip bill '%s': TimePassed=%t, AlreadyReminded=%t", bill.Name, timePassed, alreadyReminded)
 		}
 	}
 }
@@ -419,16 +441,19 @@ func getNextDueDate(bill database.RecurringBill, from time.Time) time.Time {
 	}
 
 	// If paid recently for this cycle
-	if bill.LastPaidAt != nil && (bill.LastPaidAt.Year() == year && bill.LastPaidAt.Month() == month) {
-		nextMonth := month + 1
-		nextYear := year
-		if nextMonth > 12 {
-			nextMonth = 1
-			nextYear++
-		}
-		dueDate = time.Date(nextYear, nextMonth, day, 0, 0, 0, 0, from.Location())
-		if dueDate.Month() != nextMonth {
-			dueDate = time.Date(nextYear, nextMonth+1, 0, 0, 0, 0, 0, from.Location())
+	if bill.LastPaidAt != nil {
+		paidLocal := bill.LastPaidAt.In(from.Location())
+		if paidLocal.Year() == year && paidLocal.Month() == month {
+			nextMonth := month + 1
+			nextYear := year
+			if nextMonth > 12 {
+				nextMonth = 1
+				nextYear++
+			}
+			dueDate = time.Date(nextYear, nextMonth, day, 0, 0, 0, 0, from.Location())
+			if dueDate.Month() != nextMonth {
+				dueDate = time.Date(nextYear, nextMonth+1, 0, 0, 0, 0, 0, from.Location())
+			}
 		}
 	}
 
