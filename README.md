@@ -1,6 +1,6 @@
-# Maybe Finance — Go Backend API
+# Racks Finance — Go Backend API
 
-A robust, high-performance REST API for the **Maybe Finance** personal finance management application. Built with **Go (Golang)**, **GORM**, and supporting both **SQLite** (development) and **MySQL** (production) databases. Features JWT authentication, Redis caching, Telegram bot integration, AI-powered receipt scanning (DeepSeek + OCR Tesseract), and comprehensive financial analytics.
+A robust, high-performance REST API for the **Racks Finance** personal finance management application. Built with **Go (Golang)**, **GORM**, and supporting both **SQLite** (development) and **MySQL** (production) databases. Features JWT authentication, Redis caching, Telegram bot integration, AI-powered receipt scanning (DeepSeek + OCR Tesseract), and comprehensive financial analytics.
 
 ---
 
@@ -61,7 +61,7 @@ backend/
 │   └── helpers.go               # General utility functions
 ├── uploads/                     # Uploaded receipt images
 ├── main.go                      # Application entry point, route registration, schedulers
-├── maybe.db                     # SQLite database (auto-created)
+├── racks.db                     # SQLite database (auto-created)
 ├── Dockerfile                   # Multi-stage Docker build
 ├── start-backend.sh             # Linux/macOS startup script
 ├── test-api.ps1                 # API endpoint testing script
@@ -222,8 +222,8 @@ PORT=8080
 HOST=0.0.0.0
 
 # Database
-DATABASE_URL=maybe.db                    # SQLite (default)
-# DATABASE_URL=mysql://user:pass@tcp(localhost:3306)/maybe_finance  # MySQL
+DATABASE_URL=racks.db                    # SQLite (default)
+# DATABASE_URL=mysql://user:pass@tcp(localhost:3306)/racks_finance  # MySQL
 
 # CORS
 ALLOWED_ORIGIN=http://localhost:5173     # Frontend URL
@@ -249,7 +249,7 @@ TELEGRAM_BOT_TOKEN=your_telegram_bot_token
 
 ```bash
 # Navigate to backend directory
-cd maybe-finance/backend
+cd backend
 
 # Run the server
 go run main.go
@@ -269,14 +269,14 @@ chmod +x start-backend.sh
 **Build and Run Production Binary:**
 
 ```bash
-go build -o maybe-backend main.go
-./maybe-backend
+go build -o racks-backend main.go
+./racks-backend
 ```
 
 The server starts on `http://localhost:8080` (or configured PORT).
 
 **Demo Account (Auto-seeded):**
-- Email: `demo@maybe.local`
+- Email: `demo@racks.local`
 - Password: `password123`
 
 ### 3. Testing the API
@@ -296,16 +296,16 @@ go test ./...
 
 ```bash
 # Build Docker image
-docker build -t maybe-finance-backend .
+docker build -t racks-finance-backend .
 
 # Run container with persistent volume
 docker run -d \
   -p 8080:8080 \
-  -v maybe-db-volume:/app/data \
-  -e DATABASE_URL=/app/data/maybe.db \
+  -v racks-db-volume:/app/data \
+  -e DATABASE_URL=/app/data/racks.db \
   -e REDIS_ENABLED=false \
-  --name maybe-backend \
-  maybe-finance-backend
+  --name racks-backend \
+  racks-finance-backend
 ```
 
 ---
@@ -357,7 +357,7 @@ See `database/migrations/001_add_performance_indexes.sql` for details.
 
 ## 🤖 Telegram Bot Integration
 
-The backend provides API key authentication for the Telegram bot (`bot-keuangan`) to securely interact with user accounts.
+The backend provides API key authentication for the Telegram bot (`bot-finance`) to securely interact with user accounts.
 
 ### Setup Flow
 
@@ -464,7 +464,7 @@ Get-NetTCPConnection -LocalPort 8080 | Select-Object -ExpandProperty OwningProce
 
 ```bash
 # Delete SQLite database and restart (auto-migrates + seeds demo data)
-rm maybe.db
+rm racks.db
 go run main.go
 ```
 
@@ -493,7 +493,7 @@ go test ./handlers
 |----------|---------|-------------|
 | `PORT` | `8080` | Server port |
 | `HOST` | `0.0.0.0` | Bind address |
-| `DATABASE_URL` | `maybe.db` | Database connection string |
+| `DATABASE_URL` | `racks.db` | Database connection string |
 | `ALLOWED_ORIGIN` | `*` | CORS allowed origin |
 | `ALLOWED_ORIGINS` | `` | Comma-separated additional origins |
 | `REDIS_ENABLED` | `false` | Enable Redis caching |
@@ -512,7 +512,8 @@ go test ./handlers
 ✅ **Transaction Management** — Income, expenses, transfers with receipt attachments  
 ✅ **Budget Tracking** — Category-based spending limits with progress visualization  
 ✅ **Savings Goals** — Visual progress tracking for financial targets  
-✅ **Recurring Bills** — Auto-pay subscriptions and bills with notifications  
+✅ **Recurring Bills & Timezone Reminders** — Auto-pay subscriptions and bills with scheduler synchronized to `Asia/Jakarta` (`WIB`) timezone and instant Telegram notification dispatch when reminders trigger.  
+✅ **Dynamic Reminder Reset** — Modifying recurring bill properties automatically triggers scheduler recalculations so reminders are aligned with updated payment timings.  
 ✅ **Investment Portfolio** — Track stocks, crypto with real-time P&L  
 ✅ **AI Receipt Scanning** — OCR + DeepSeek AI for automatic transaction extraction  
 ✅ **Financial Insights** — AI-powered health scoring and recommendations  
@@ -523,9 +524,11 @@ go test ./handlers
 
 ---
 
-## 📝 License
+## 🔗 Related Projects
 
-This project is part of the **Maybe Finance** personal finance dashboard.
+- **Frontend Dashboard (racks-finance-frontend)**: [GitHub Repository (finance-fe)](https://github.com/Trenchkid0/finance-fe)
+- **Backend API (racks-finance-backend)**: [GitHub Repository (finance-be)](https://github.com/Trenchkid0/finance-be)
+- **Telegram Bot (bot-finance)**: [GitHub Repository (bot-finance)](https://github.com/Trenchkid0/bot-finance)
 
 ---
 
