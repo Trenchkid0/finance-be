@@ -22,7 +22,7 @@ type CategoryRequest struct {
 func CategoriesHandler(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
-		utils.ErrorResponse(w, http.StatusUnauthorized, "Unauthorized")
+		utils.HandleUnauthorized(w)
 		return
 	}
 
@@ -42,7 +42,7 @@ func CategoriesHandler(w http.ResponseWriter, r *http.Request) {
 			Find(&categories).Error
 
 		if err != nil {
-			utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to retrieve categories")
+			utils.HandleDBError(w, err, "retrieve categories")
 			return
 		}
 		_ = utils.CacheSet(cacheKey, categories, 30*time.Minute)
@@ -51,7 +51,7 @@ func CategoriesHandler(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		var req CategoryRequest
 		if err := utils.ParseJSON(r, &req); err != nil {
-			utils.ErrorResponse(w, http.StatusBadRequest, "Invalid request body")
+			utils.HandleBadRequest(w, "Invalid request body")
 			return
 		}
 
@@ -71,13 +71,13 @@ func CategoriesHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if err := database.DB.Create(&category).Error; err != nil {
-			utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to create category")
+			utils.HandleDBError(w, err, "create category")
 			return
 		}
 		_ = utils.CacheInvalidateUser(userID)
 		utils.JSONResponse(w, http.StatusCreated, category)
 
 	default:
-		utils.ErrorResponse(w, http.StatusMethodNotAllowed, "Method not allowed")
+		utils.HandleMethodNotAllowed(w)
 	}
 }

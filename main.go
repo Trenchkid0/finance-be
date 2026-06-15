@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -27,10 +26,10 @@ func main() {
 	loc, err := time.LoadLocation("Asia/Jakarta")
 	if err == nil {
 		time.Local = loc
-		log.Println("🌐 Timezone configured to Asia/Jakarta (WIB) globally")
+		utils.Log.Info().Msg("Timezone configured to Asia/Jakarta (WIB) globally")
 	} else {
 		time.Local = time.FixedZone("WIB", 7*60*60)
-		log.Printf("🌐 Failed to load Asia/Jakarta timezone, using fallback WIB offset: %v", err)
+		utils.Log.Warn().Err(err).Msg("Failed to load Asia/Jakarta timezone, using fallback WIB offset")
 	}
 
 	// 1. Load env variables from .env file if it exists
@@ -44,9 +43,9 @@ func main() {
 
 	_, err = database.InitDB(dbPath)
 	if err != nil {
-		log.Fatalf("❌ Database init failed: %v", err)
+		utils.Log.Fatal().Err(err).Msg("Database init failed")
 	}
-	log.Printf("📂 Database loaded from: %s", dbPath)
+	utils.Log.Info().Str("path", dbPath).Msg("Database loaded")
 
 	// 3. Initialize Redis cache
 	utils.InitRedis()
@@ -163,7 +162,7 @@ func main() {
 	serverErrors := make(chan error, 1)
 
 	go func() {
-		fmt.Printf("🚀 Maybe Finance Backend running on http://%s\n", bindAddr)
+		utils.Log.Info().Str("addr", bindAddr).Msg("Maybe Finance Backend started")
 		serverErrors <- srv.ListenAndServe()
 	}()
 
@@ -173,9 +172,9 @@ func main() {
 
 	select {
 	case err := <-serverErrors:
-		log.Fatalf("❌ Server error: %v", err)
+		utils.Log.Fatal().Err(err).Msg("Server error")
 	case sig := <-shutdown:
-		log.Printf("🛑 Shutdown signal received (%v). Draining active connections...", sig)
+		utils.Log.Info().Str("signal", sig.String()).Msg("Shutdown signal received, draining active connections")
 
 		// Cancel scheduler contexts
 		autoPayCancel()
@@ -186,10 +185,10 @@ func main() {
 		defer cancel()
 
 		if err := srv.Shutdown(ctx); err != nil {
-			log.Printf("⚠️ Graceful shutdown timed out: %v", err)
+			utils.Log.Warn().Err(err).Msg("Graceful shutdown timed out")
 			srv.Close()
 		}
-		log.Println("✅ Server stopped gracefully")
+		utils.Log.Info().Msg("Server stopped gracefully")
 	}
 }
 
@@ -311,7 +310,7 @@ func corsMiddleware(next http.Handler, allowedOrigin string) http.Handler {
 		} else if origin == "" {
 			w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
 		} else {
-			fmt.Printf("⚠️ CORS blocked origin: %s\n", origin)
+			utils.Log.Warn().Str("origin", origin).Msg("CORS blocked origin")
 		}
 
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
@@ -362,7 +361,7 @@ func gzipMiddleware(next http.Handler) http.Handler {
 }
 
 func startAutoPayScheduler(ctx context.Context) {
-	log.Println("⏰ Auto-Pay background scheduler started")
+	utils.Log.Info().Msg("Auto-Pay background scheduler started")
 	
 	// Check immediately on startup, then every 4 hours
 	go checkAutoPayBills()
@@ -373,7 +372,7 @@ func startAutoPayScheduler(ctx context.Context) {
 			select {
 			case <-ctx.Done():
 				ticker.Stop()
-				log.Println("⏰ Auto-Pay scheduler stopped")
+				utils.Log.Info().Msg("Auto-Pay scheduler stopped")
 				return
 			case <-ticker.C:
 				checkAutoPayBills()
@@ -391,7 +390,7 @@ func checkAutoPayBills() {
 	var bills []database.RecurringBill
 	err := db.Where("auto_pay = ? AND account_id IS NOT NULL AND account_id != ''", true).Find(&bills).Error
 	if err != nil {
-		log.Printf("⚠️ [AutoPay] Failed to fetch auto-pay bills: %v", err)
+		utils.Log.Error().Err(err).Msg("[AutoPay] Failed to fetch auto-pay bills")
 		return
 	}
 
@@ -428,14 +427,14 @@ func checkAutoPayBills() {
 		var acc database.FinanceAccount
 		if err := tx.Where("id = ? AND user_id = ?", *bill.AccountID, bill.UserID).First(&acc).Error; err != nil {
 			tx.Rollback()
-			log.Printf("❌ [AutoPay] Account not found for bill '%s': %v", bill.Name, err)
+			utils.Log.Error().Err(err).Str("bill", bill.Name).Msg("[AutoPay] Account not found")
 			continue
 		}
 
 		newBalance := acc.Balance - (bill.Amount + bill.AdminFee)
 		if err := tx.Model(&acc).Update("balance", newBalance).Error; err != nil {
 			tx.Rollback()
-			log.Printf("❌ [AutoPay] Failed to update balance for bill '%s': %v", bill.Name, err)
+			utils.Log.Error().Err(err).Str("bill", bill.Name).Msg("[AutoPay] Failed to update balance")
 			continue
 		}
 
@@ -456,7 +455,7 @@ func checkAutoPayBills() {
 
 		if err := tx.Create(&transaction).Error; err != nil {
 			tx.Rollback()
-			log.Printf("❌ [AutoPay] Failed to create transaction for bill '%s': %v", bill.Name, err)
+			utils.Log.Error().Err(err).Str("bill", bill.Name).Msg("[AutoPay] Failed to create transaction")
 			continue
 		}
 
@@ -464,24 +463,24 @@ func checkAutoPayBills() {
 		bill.LastPaidAt = &now
 		if err := tx.Save(&bill).Error; err != nil {
 			tx.Rollback()
-			log.Printf("❌ [AutoPay] Failed to update bill paid date for '%s': %v", bill.Name, err)
+			utils.Log.Error().Err(err).Str("bill", bill.Name).Msg("[AutoPay] Failed to update bill paid date")
 			continue
 		}
 
 		if err := tx.Commit().Error; err != nil {
 			tx.Rollback()
-			log.Printf("❌ [AutoPay] Failed to commit transaction for bill '%s': %v", bill.Name, err)
+			utils.Log.Error().Err(err).Str("bill", bill.Name).Msg("[AutoPay] Failed to commit transaction")
 			continue
 		}
 
 		// Invalidate cache
 		_ = utils.CacheInvalidateUser(bill.UserID)
-		log.Printf("⏰ [AutoPay] Successfully paid bill '%s' (Rp %.0f) for user: %s", bill.Name, bill.Amount, bill.UserID)
+		utils.Log.Info().Str("bill", bill.Name).Float64("amount", bill.Amount).Str("user_id", bill.UserID).Msg("[AutoPay] Successfully paid bill")
 	}
 }
 
 func startReminderScheduler(ctx context.Context) {
-	log.Println("⏰ Reminder background scheduler started")
+	utils.Log.Info().Msg("Reminder background scheduler started")
 	
 	// Check immediately on startup, then every 5 minutes
 	go handlers.CheckReminderBills()
@@ -492,7 +491,7 @@ func startReminderScheduler(ctx context.Context) {
 			select {
 			case <-ctx.Done():
 				ticker.Stop()
-				log.Println("⏰ Reminder scheduler stopped")
+				utils.Log.Info().Msg("Reminder scheduler stopped")
 				return
 			case <-ticker.C:
 				handlers.CheckReminderBills()

@@ -56,12 +56,23 @@ type TransactionsListResponse struct {
 func TransactionsHandler(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
-		utils.ErrorResponse(w, http.StatusUnauthorized, "Unauthorized")
+		utils.HandleUnauthorized(w)
 		return
 	}
 
 	switch r.Method {
 	case http.MethodGet:
+		// ✅ PERF: Redis cache — serve cached response if available (2-min TTL)
+		cacheKey := utils.BuildCacheKey("transactions", userID, r.URL.RawQuery)
+		var cachedResponse TransactionsListResponse
+		if err := utils.CacheGet(cacheKey, &cachedResponse); err == nil {
+			for i := range cachedResponse.Transactions {
+				cachedResponse.Transactions[i].ReceiptImageURL = resolveReceiptURL(r, cachedResponse.Transactions[i].ReceiptImageURL)
+			}
+			utils.JSONResponse(w, http.StatusOK, cachedResponse)
+			return
+		}
+
 		// Filters
 		accountID := r.URL.Query().Get("accountId")
 		txType := r.URL.Query().Get("type")
@@ -110,7 +121,7 @@ func TransactionsHandler(w http.ResponseWriter, r *http.Request) {
 		// Count total before pagination
 		var total int64
 		if err := baseQuery.Session(&gorm.Session{}).Count(&total).Error; err != nil {
-			utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to count transactions")
+			utils.HandleDBError(w, err, "count transactions")
 			return
 		}
 
@@ -121,7 +132,7 @@ func TransactionsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		var sumResults []SumResult
 		if err := baseQuery.Session(&gorm.Session{}).Select("type, SUM(amount) as sum").Group("type").Scan(&sumResults).Error; err != nil {
-			utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to aggregate transactions")
+			utils.HandleDBError(w, err, "aggregate transactions")
 			return
 		}
 
@@ -152,7 +163,7 @@ func TransactionsHandler(w http.ResponseWriter, r *http.Request) {
 		var transactions []database.Transaction
 		if err := baseQuery.Session(&gorm.Session{}).Preload("Category").Preload("Account").Preload("TransferTo").
 			Order("date desc, created_at desc").Limit(limit).Offset(offset).Find(&transactions).Error; err != nil {
-			utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to retrieve transactions")
+			utils.HandleDBError(w, err, "retrieve transactions")
 			return
 		}
 
@@ -160,17 +171,22 @@ func TransactionsHandler(w http.ResponseWriter, r *http.Request) {
 			transactions[i].ReceiptImageURL = resolveReceiptURL(r, transactions[i].ReceiptImageURL)
 		}
 
-		utils.JSONResponse(w, http.StatusOK, TransactionsListResponse{
+		response := TransactionsListResponse{
 			Transactions: transactions,
 			Total:        total,
 			Income:       totalIncome,
 			Expense:      totalExpense,
-		})
+		}
+
+		// ✅ PERF: Store in Redis cache (2-min TTL — short enough for fresh data, long enough for page navigations)
+		_ = utils.CacheSet(cacheKey, response, 2*time.Minute)
+
+		utils.JSONResponse(w, http.StatusOK, response)
 
 	case http.MethodPost:
 		var req TransactionRequest
 		if err := utils.ParseJSON(r, &req); err != nil {
-			utils.ErrorResponse(w, http.StatusBadRequest, "Invalid request body")
+			utils.HandleBadRequest(w, "Invalid request body")
 			return
 		}
 
@@ -199,11 +215,11 @@ func TransactionsHandler(w http.ResponseWriter, r *http.Request) {
 		if err := adjustBalances(tx, userID, req.AccountID, req.TransferToID, req.Type, req.Amount, adminFee, 1); err != nil {
 			tx.Rollback()
 			if strings.Contains(err.Error(), "missing") {
-				utils.ErrorResponse(w, http.StatusBadRequest, err.Error())
+				utils.HandleBadRequest(w, err.Error())
 			} else if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "Record NotFound") {
-				utils.ErrorResponse(w, http.StatusNotFound, err.Error())
+				utils.HandleNotFound(w, "Account")
 			} else {
-				utils.ErrorResponse(w, http.StatusInternalServerError, err.Error())
+				utils.HandleDBError(w, err, "adjust balances")
 			}
 			return
 		}
@@ -237,15 +253,15 @@ func TransactionsHandler(w http.ResponseWriter, r *http.Request) {
 
 		if err := tx.Create(&transaction).Error; err != nil {
 			tx.Rollback()
-			utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to record transaction")
+			utils.HandleDBError(w, err, "record transaction")
 			return
 		}
 
 		tx.Commit()
 
-		// ✅ Invalidate related caches after successful transaction
+		// Invalidate related caches after successful transaction
 		_ = utils.CacheInvalidateUser(userID)
-		fmt.Printf("🔄 Cache invalidated for user: %s (transaction created)\n", userID)
+		utils.Log.Debug().Str("user_id", userID).Msg("Cache invalidated for user (transaction created)")
 
 		// Preload relations for response
 		database.DB.Preload("Category").Preload("Account").Preload("TransferTo").First(&transaction, "id = ?", transaction.ID)
@@ -257,12 +273,12 @@ func TransactionsHandler(w http.ResponseWriter, r *http.Request) {
 			IDs []string `json:"ids"`
 		}
 		if err := utils.ParseJSON(r, &req); err != nil {
-			utils.ErrorResponse(w, http.StatusBadRequest, "Invalid request body")
+			utils.HandleBadRequest(w, "Invalid request body")
 			return
 		}
 
 		if len(req.IDs) == 0 {
-			utils.ErrorResponse(w, http.StatusBadRequest, "IDs list cannot be empty")
+			utils.HandleBadRequest(w, "IDs list cannot be empty")
 			return
 		}
 
@@ -272,13 +288,13 @@ func TransactionsHandler(w http.ResponseWriter, r *http.Request) {
 		var transactions []database.Transaction
 		if err := tx.Where("id IN ? AND user_id = ?", req.IDs, userID).Find(&transactions).Error; err != nil {
 			tx.Rollback()
-			utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to retrieve transactions for deletion")
+			utils.HandleDBError(w, err, "retrieve transactions for deletion")
 			return
 		}
 
 		if len(transactions) == 0 {
 			tx.Rollback()
-			utils.ErrorResponse(w, http.StatusNotFound, "No matching transactions found")
+			utils.HandleNotFound(w, "Matching transactions")
 			return
 		}
 
@@ -286,7 +302,7 @@ func TransactionsHandler(w http.ResponseWriter, r *http.Request) {
 		for _, transaction := range transactions {
 			if err := adjustBalances(tx, userID, transaction.AccountID, transaction.TransferToID, transaction.Type, transaction.Amount, transaction.AdminFee, -1); err != nil {
 				tx.Rollback()
-				utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to update balances during deletion")
+				utils.HandleDBError(w, err, "update balances during deletion")
 				return
 			}
 		}
@@ -294,7 +310,7 @@ func TransactionsHandler(w http.ResponseWriter, r *http.Request) {
 		// Perform bulk deletion
 		if err := tx.Delete(&transactions).Error; err != nil {
 			tx.Rollback()
-			utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to delete transactions")
+			utils.HandleDBError(w, err, "delete transactions")
 			return
 		}
 
@@ -305,7 +321,7 @@ func TransactionsHandler(w http.ResponseWriter, r *http.Request) {
 		})
 
 	default:
-		utils.ErrorResponse(w, http.StatusMethodNotAllowed, "Method not allowed")
+		utils.HandleMethodNotAllowed(w)
 	}
 }
 

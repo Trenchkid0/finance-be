@@ -30,7 +30,7 @@ type AccountListItemResponse struct {
 func AccountsHandler(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
-		utils.ErrorResponse(w, http.StatusUnauthorized, "Unauthorized")
+		utils.HandleUnauthorized(w)
 		return
 	}
 
@@ -55,7 +55,7 @@ func AccountsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if err := query.Order("is_active desc, name asc").Find(&accounts).Error; err != nil {
-			utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to retrieve accounts")
+			utils.HandleDBError(w, err, "retrieve accounts")
 			return
 		}
 
@@ -102,7 +102,7 @@ func AccountsHandler(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		var req AccountRequest
 		if err := utils.ParseJSON(r, &req); err != nil {
-			utils.ErrorResponse(w, http.StatusBadRequest, "Invalid request body")
+			utils.HandleBadRequest(w, "Invalid request body")
 			return
 		}
 
@@ -135,14 +135,14 @@ func AccountsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if err := database.DB.Create(&account).Error; err != nil {
-			utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to create account")
+			utils.HandleDBError(w, err, "create account")
 			return
 		}
 		_ = utils.CacheInvalidateUser(userID)
 		utils.JSONResponse(w, http.StatusCreated, account)
 
 	default:
-		utils.ErrorResponse(w, http.StatusMethodNotAllowed, "Method not allowed")
+		utils.HandleMethodNotAllowed(w)
 	}
 }
 
@@ -150,21 +150,21 @@ func AccountsHandler(w http.ResponseWriter, r *http.Request) {
 func AccountDetailHandler(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
-		utils.ErrorResponse(w, http.StatusUnauthorized, "Unauthorized")
+		utils.HandleUnauthorized(w)
 		return
 	}
 
 	// Path parameter in Go 1.22+
 	accountID := r.PathValue("id")
 	if accountID == "" {
-		utils.ErrorResponse(w, http.StatusBadRequest, "Missing account ID")
+		utils.HandleBadRequest(w, "Missing account ID")
 		return
 	}
 
 	// Find the account and ensure ownership
 	var account database.FinanceAccount
 	if err := database.DB.Where("id = ? AND user_id = ?", accountID, userID).First(&account).Error; err != nil {
-		utils.ErrorResponse(w, http.StatusNotFound, "Account not found")
+		utils.HandleNotFound(w, "Account")
 		return
 	}
 
@@ -175,7 +175,11 @@ func AccountDetailHandler(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPut:
 		var req AccountRequest
 		if err := utils.ParseJSON(r, &req); err != nil {
-			utils.ErrorResponse(w, http.StatusBadRequest, "Invalid request body")
+			utils.HandleBadRequest(w, "Invalid request body")
+			return
+		}
+
+		if !middleware.ValidateAndRespond(w, req) {
 			return
 		}
 
@@ -201,7 +205,7 @@ func AccountDetailHandler(w http.ResponseWriter, r *http.Request) {
 		account.UpdatedAt = time.Now()
 
 		if err := database.DB.Save(&account).Error; err != nil {
-			utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to update account")
+			utils.HandleDBError(w, err, "update account")
 			return
 		}
 		_ = utils.CacheInvalidateUser(userID)
@@ -215,13 +219,13 @@ func AccountDetailHandler(w http.ResponseWriter, r *http.Request) {
 		tx := database.DB.Begin()
 		if err := tx.Where("account_id = ? OR transfer_to_id = ?", accountID, accountID).Delete(&database.Transaction{}).Error; err != nil {
 			tx.Rollback()
-			utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to delete associated transactions")
+			utils.HandleDBError(w, err, "delete associated transactions")
 			return
 		}
 
 		if err := tx.Delete(&account).Error; err != nil {
 			tx.Rollback()
-			utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to delete account")
+			utils.HandleDBError(w, err, "delete account")
 			return
 		}
 
@@ -230,6 +234,6 @@ func AccountDetailHandler(w http.ResponseWriter, r *http.Request) {
 		utils.JSONResponse(w, http.StatusOK, map[string]string{"message": "Account deleted successfully"})
 
 	default:
-		utils.ErrorResponse(w, http.StatusMethodNotAllowed, "Method not allowed")
+		utils.HandleMethodNotAllowed(w)
 	}
 }

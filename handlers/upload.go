@@ -30,25 +30,25 @@ const (
 // UploadReceiptHandler handles receipt image uploads and converts to optimized format
 func UploadReceiptHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		utils.ErrorResponse(w, http.StatusMethodNotAllowed, "Method not allowed")
+		utils.HandleMethodNotAllowed(w)
 		return
 	}
 
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
-		utils.ErrorResponse(w, http.StatusUnauthorized, "Unauthorized")
+		utils.HandleUnauthorized(w)
 		return
 	}
 
 	// Parse multipart form
 	if err := r.ParseMultipartForm(MaxUploadSize); err != nil {
-		utils.ErrorResponse(w, http.StatusBadRequest, "File too large or invalid form data")
+		utils.HandleBadRequest(w, "File too large or invalid form data")
 		return
 	}
 
 	file, header, err := r.FormFile("receipt")
 	if err != nil {
-		utils.ErrorResponse(w, http.StatusBadRequest, "Receipt file is required")
+		utils.HandleBadRequest(w, "Receipt file is required")
 		return
 	}
 	defer file.Close()
@@ -56,20 +56,28 @@ func UploadReceiptHandler(w http.ResponseWriter, r *http.Request) {
 	// Validate file type
 	contentType := header.Header.Get("Content-Type")
 	if !isValidImageType(contentType) {
-		utils.ErrorResponse(w, http.StatusBadRequest, "Only image files (JPEG, PNG, WebP) are allowed")
+		utils.HandleBadRequest(w, "Only image files (JPEG, PNG, WebP) are allowed")
 		return
 	}
 
 	// Validate file size
 	if header.Size > MaxUploadSize {
-		utils.ErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("File size exceeds %d MB", MaxUploadSize/(1024*1024)))
+		utils.HandleBadRequest(w, fmt.Sprintf("File size exceeds %d MB", MaxUploadSize/(1024*1024)))
 		return
 	}
 
 	// Read file content
 	fileBytes, err := io.ReadAll(file)
 	if err != nil {
-		utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to read file")
+		utils.HandleDBError(w, err, "read uploaded file")
+		return
+	}
+
+	// SECURITY: Sniff magic bytes to verify actual file content matches claimed type
+	// Prevents content-type spoofing (e.g. renaming a .exe to .jpg)
+	detectedType := http.DetectContentType(fileBytes)
+	if !strings.HasPrefix(detectedType, "image/") {
+		utils.HandleBadRequest(w, "File content does not match an image type")
 		return
 	}
 
@@ -82,18 +90,18 @@ func UploadReceiptHandler(w http.ResponseWriter, r *http.Request) {
 	} else if strings.Contains(contentType, "webp") {
 		img, err = xwebp.Decode(bytes.NewReader(fileBytes))
 	} else {
-		utils.ErrorResponse(w, http.StatusBadRequest, "Unsupported image format")
+		utils.HandleBadRequest(w, "Unsupported image format")
 		return
 	}
 
 	if err != nil {
-		utils.ErrorResponse(w, http.StatusBadRequest, "Failed to decode image")
+		utils.HandleBadRequest(w, "Failed to decode image")
 		return
 	}
 
 	// Create upload directory if not exists
 	if err := os.MkdirAll(UploadDir, 0755); err != nil {
-		utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to create upload directory")
+		utils.HandleDBError(w, err, "create upload directory")
 		return
 	}
 
@@ -104,7 +112,7 @@ func UploadReceiptHandler(w http.ResponseWriter, r *http.Request) {
 	// Encode image
 	outputFile, err := os.Create(filePath)
 	if err != nil {
-		utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to create file")
+		utils.HandleDBError(w, err, "create upload file")
 		return
 	}
 	defer outputFile.Close()
@@ -112,7 +120,7 @@ func UploadReceiptHandler(w http.ResponseWriter, r *http.Request) {
 	// Encode image using platform-specific encoder
 	encodedSize, err := encodeImage(outputFile, img)
 	if err != nil {
-		utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to encode image")
+		utils.HandleDBError(w, err, "encode image")
 		return
 	}
 

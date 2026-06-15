@@ -15,24 +15,24 @@ import (
 // TestTelegramHandler sends a test message to the user's registered Telegram Chat ID
 func TestTelegramHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		utils.ErrorResponse(w, http.StatusMethodNotAllowed, "Method not allowed")
+		utils.HandleMethodNotAllowed(w)
 		return
 	}
 
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
-		utils.ErrorResponse(w, http.StatusUnauthorized, "Unauthorized")
+		utils.HandleUnauthorized(w)
 		return
 	}
 
 	var user database.User
 	if err := database.DB.Where("id = ?", userID).First(&user).Error; err != nil {
-		utils.ErrorResponse(w, http.StatusNotFound, "User not found")
+		utils.HandleNotFound(w, "User")
 		return
 	}
 
 	if user.TelegramChatID == "" {
-		utils.ErrorResponse(w, http.StatusBadRequest, "Telegram Chat ID belum terdaftar. Silakan kirim pesan apa saja (misal: /start) ke bot Telegram Anda terlebih dahulu.")
+		utils.HandleBadRequest(w, "Telegram Chat ID belum terdaftar. Silakan kirim pesan apa saja (misal: /start) ke bot Telegram Anda terlebih dahulu.")
 		return
 	}
 
@@ -43,7 +43,7 @@ func TestTelegramHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if token == "" {
-		utils.ErrorResponse(w, http.StatusInternalServerError, "TELEGRAM_BOT_TOKEN tidak dikonfigurasi di file .env backend.")
+		utils.HandleDBError(w, nil, "TELEGRAM_BOT_TOKEN not configured")
 		return
 	}
 
@@ -57,14 +57,15 @@ func TestTelegramHandler(w http.ResponseWriter, r *http.Request) {
 
 	jsonPayload, err := json.Marshal(payload)
 	if err != nil {
-		utils.ErrorResponse(w, http.StatusInternalServerError, "Gagal membuat request payload.")
+		utils.HandleDBError(w, err, "create request payload")
 		return
 	}
 
 	// Send HTTP request to Telegram
 	resp, err := http.Post(apiURL, "application/json", bytes.NewBuffer(jsonPayload))
 	if err != nil {
-		utils.ErrorResponse(w, http.StatusInternalServerError, fmt.Sprintf("Gagal menghubungi Telegram API: %v", err))
+		utils.Log.Error().Err(err).Msg("Failed to contact Telegram API")
+		utils.ErrorResponse(w, http.StatusBadGateway, "Gagal menghubungi Telegram API")
 		return
 	}
 	defer resp.Body.Close()
@@ -78,6 +79,7 @@ func TestTelegramHandler(w http.ResponseWriter, r *http.Request) {
 		if tgErr.Description != "" {
 			errorMsg = fmt.Sprintf("Telegram API Error: %s", tgErr.Description)
 		}
+		utils.Log.Error().Int("status", resp.StatusCode).Str("description", errorMsg).Msg("Telegram API error")
 		utils.ErrorResponse(w, resp.StatusCode, errorMsg)
 		return
 	}

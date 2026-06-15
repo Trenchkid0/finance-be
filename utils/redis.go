@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"strconv"
 	"time"
@@ -22,7 +21,7 @@ var (
 func InitRedis() {
 	enabled := os.Getenv("REDIS_ENABLED")
 	if enabled != "true" {
-		log.Println("⚠️  Redis cache is disabled")
+		Log.Warn().Msg("Redis cache is disabled")
 		return
 	}
 
@@ -53,21 +52,21 @@ func InitRedis() {
 
 	// Test connection
 	if err := RedisClient.Ping(ctx).Err(); err != nil {
-		log.Printf("❌ Failed to connect to Redis at %s:%s - %v\n", host, port, err)
-		log.Println("⚠️  Continuing without cache...")
+		Log.Error().Err(err).Str("host", host).Str("port", port).Msg("Failed to connect to Redis")
+		Log.Warn().Msg("Continuing without cache...")
 		RedisClient = nil
 		return
 	}
 
 	cacheEnabled = true
-	log.Printf("✅ Redis cache connected successfully at %s:%s (DB: %d)\n", host, port, db)
+	Log.Info().Str("host", host).Str("port", port).Int("db", db).Msg("Redis cache connected successfully")
 }
 
 // CloseRedis closes Redis connection
 func CloseRedis() {
 	if RedisClient != nil {
 		if err := RedisClient.Close(); err != nil {
-			log.Printf("Error closing Redis connection: %v\n", err)
+			Log.Error().Err(err).Msg("Error closing Redis connection")
 		}
 	}
 }

@@ -43,13 +43,13 @@ type DashboardSummaryResponse struct {
 // SummaryHandler aggregates data for the Dashboard page with Redis caching
 func SummaryHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		utils.ErrorResponse(w, http.StatusMethodNotAllowed, "Method not allowed")
+		utils.HandleMethodNotAllowed(w)
 		return
 	}
 
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
-		utils.ErrorResponse(w, http.StatusUnauthorized, "Unauthorized")
+		utils.HandleUnauthorized(w)
 		return
 	}
 
@@ -79,7 +79,7 @@ func SummaryHandler(w http.ResponseWriter, r *http.Request) {
 	// 1. Fetch active accounts
 	var accounts []database.FinanceAccount
 	if err := database.DB.Where("user_id = ? AND is_active = ?", userID, true).Find(&accounts).Error; err != nil {
-		utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to fetch accounts")
+		utils.HandleDBError(w, err, "fetch accounts")
 		return
 	}
 

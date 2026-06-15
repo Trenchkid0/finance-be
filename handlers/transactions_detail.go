@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -15,19 +14,19 @@ import (
 func TransactionDetailHandler(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
-		utils.ErrorResponse(w, http.StatusUnauthorized, "Unauthorized")
+		utils.HandleUnauthorized(w)
 		return
 	}
 
 	txID := r.PathValue("id")
 	if txID == "" {
-		utils.ErrorResponse(w, http.StatusBadRequest, "Missing transaction ID")
+		utils.HandleBadRequest(w, "Missing transaction ID")
 		return
 	}
 
 	var transaction database.Transaction
 	if err := database.DB.Where("id = ? AND user_id = ?", txID, userID).First(&transaction).Error; err != nil {
-		utils.ErrorResponse(w, http.StatusNotFound, "Transaction not found")
+		utils.HandleNotFound(w, "Transaction")
 		return
 	}
 
@@ -35,7 +34,11 @@ func TransactionDetailHandler(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPut:
 		var req TransactionRequest
 		if err := utils.ParseJSON(r, &req); err != nil {
-			utils.ErrorResponse(w, http.StatusBadRequest, "Invalid request body")
+			utils.HandleBadRequest(w, "Invalid request body")
+			return
+		}
+
+		if !middleware.ValidateAndRespond(w, req) {
 			return
 		}
 
@@ -45,7 +48,7 @@ func TransactionDetailHandler(w http.ResponseWriter, r *http.Request) {
 		// 1. Rollback old transaction balance effects
 		if err := adjustBalances(tx, userID, transaction.AccountID, transaction.TransferToID, transaction.Type, transaction.Amount, transaction.AdminFee, -1); err != nil {
 			tx.Rollback()
-			utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to roll back old transaction balances")
+			utils.HandleDBError(w, err, "roll back old transaction balances")
 			return
 		}
 
@@ -73,7 +76,7 @@ func TransactionDetailHandler(w http.ResponseWriter, r *http.Request) {
 
 		if err := adjustBalances(tx, userID, targetAccID, targetTransferToID, targetType, targetAmount, targetAdminFee, 1); err != nil {
 			tx.Rollback()
-			utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to reconcile new transaction balances")
+			utils.HandleDBError(w, err, "reconcile new transaction balances")
 			return
 		}
 
@@ -109,15 +112,15 @@ func TransactionDetailHandler(w http.ResponseWriter, r *http.Request) {
 
 		if err := tx.Save(&transaction).Error; err != nil {
 			tx.Rollback()
-			utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to update transaction record")
+			utils.HandleDBError(w, err, "update transaction record")
 			return
 		}
 
 		tx.Commit()
 
-		// ✅ Invalidate related caches after successful update
+		// Invalidate related caches after successful update
 		_ = utils.CacheInvalidateUser(userID)
-		fmt.Printf("🔄 Cache invalidated for user: %s (transaction updated)\n", userID)
+		utils.Log.Debug().Str("user_id", userID).Msg("Cache invalidated for user (transaction updated)")
 
 		// Preload relations for response
 		database.DB.Preload("Category").Preload("Account").Preload("TransferTo").First(&transaction, "id = ?", transaction.ID)
@@ -130,25 +133,25 @@ func TransactionDetailHandler(w http.ResponseWriter, r *http.Request) {
 		// Roll back balance effects before deleting
 		if err := adjustBalances(tx, userID, transaction.AccountID, transaction.TransferToID, transaction.Type, transaction.Amount, transaction.AdminFee, -1); err != nil {
 			tx.Rollback()
-			utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to update balances during deletion")
+			utils.HandleDBError(w, err, "update balances during deletion")
 			return
 		}
 
 		if err := tx.Delete(&transaction).Error; err != nil {
 			tx.Rollback()
-			utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to delete transaction")
+			utils.HandleDBError(w, err, "delete transaction")
 			return
 		}
 
 		tx.Commit()
 
-		// ✅ Invalidate related caches after successful deletion
+		// Invalidate related caches after successful deletion
 		_ = utils.CacheInvalidateUser(userID)
-		fmt.Printf("🔄 Cache invalidated for user: %s (transaction deleted)\n", userID)
+		utils.Log.Debug().Str("user_id", userID).Msg("Cache invalidated for user (transaction deleted)")
 		
 		utils.JSONResponse(w, http.StatusOK, map[string]string{"message": "Transaction deleted successfully"})
 
 	default:
-		utils.ErrorResponse(w, http.StatusMethodNotAllowed, "Method not allowed")
+		utils.HandleMethodNotAllowed(w)
 	}
 }

@@ -16,26 +16,26 @@ import (
 // ImportTransactionsHandler imports transactions from a CSV file
 func ImportTransactionsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		utils.ErrorResponse(w, http.StatusMethodNotAllowed, "Method not allowed")
+		utils.HandleMethodNotAllowed(w)
 		return
 	}
 
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
-		utils.ErrorResponse(w, http.StatusUnauthorized, "Unauthorized")
+		utils.HandleUnauthorized(w)
 		return
 	}
 
 	// Parse multipart form (max 10MB)
 	err := r.ParseMultipartForm(10 << 20)
 	if err != nil {
-		utils.ErrorResponse(w, http.StatusBadRequest, "Failed to parse form data")
+		utils.HandleBadRequest(w, "Failed to parse form data")
 		return
 	}
 
 	file, _, err := r.FormFile("file")
 	if err != nil {
-		utils.ErrorResponse(w, http.StatusBadRequest, "File is required")
+		utils.HandleBadRequest(w, "File is required")
 		return
 	}
 	defer file.Close()
@@ -43,12 +43,12 @@ func ImportTransactionsHandler(w http.ResponseWriter, r *http.Request) {
 	reader := csv.NewReader(file)
 	records, err := reader.ReadAll()
 	if err != nil {
-		utils.ErrorResponse(w, http.StatusBadRequest, "Failed to parse CSV file")
+		utils.HandleBadRequest(w, "Failed to parse CSV file")
 		return
 	}
 
 	if len(records) < 2 {
-		utils.ErrorResponse(w, http.StatusBadRequest, "CSV file is empty or has no data rows")
+		utils.HandleBadRequest(w, "CSV file is empty or has no data rows")
 		return
 	}
 
@@ -56,7 +56,7 @@ func ImportTransactionsHandler(w http.ResponseWriter, r *http.Request) {
 	// Skip header row
 	header := records[0]
 	if len(header) < 6 {
-		utils.ErrorResponse(w, http.StatusBadRequest, "Invalid CSV format: missing required columns")
+		utils.HandleBadRequest(w, "Invalid CSV format: missing required columns")
 		return
 	}
 
@@ -197,20 +197,20 @@ func ImportTransactionsHandler(w http.ResponseWriter, r *http.Request) {
 
 	if imported == 0 {
 		tx.Rollback()
-		utils.ErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("No transactions imported. Errors: %v", errors))
+		utils.HandleBadRequest(w, fmt.Sprintf("No transactions imported. Errors: %v", errors))
 		return
 	}
 
 	// PERF: Batch insert all transactions at once
 	if err := tx.CreateInBatches(&batchTx, 50).Error; err != nil {
 		tx.Rollback()
-		utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to insert transactions")
+		utils.HandleDBError(w, err, "insert transactions")
 		return
 	}
 
 	if err := tx.Commit().Error; err != nil {
 		tx.Rollback()
-		utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to commit transactions")
+		utils.HandleDBError(w, err, "commit transactions")
 		return
 	}
 

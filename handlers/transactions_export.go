@@ -14,13 +14,13 @@ import (
 // ExportTransactionsHandler exports user transactions to CSV file
 func ExportTransactionsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		utils.ErrorResponse(w, http.StatusMethodNotAllowed, "Method not allowed")
+		utils.HandleMethodNotAllowed(w)
 		return
 	}
 
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
-		utils.ErrorResponse(w, http.StatusUnauthorized, "Unauthorized")
+		utils.HandleUnauthorized(w)
 		return
 	}
 
@@ -40,7 +40,7 @@ func ExportTransactionsHandler(w http.ResponseWriter, r *http.Request) {
 		Order("transactions.date desc").
 		Rows()
 	if err != nil {
-		utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to retrieve transactions for export")
+		utils.HandleDBError(w, err, "retrieve transactions for export")
 		return
 	}
 	defer rows.Close()

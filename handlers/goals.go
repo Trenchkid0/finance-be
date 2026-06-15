@@ -12,8 +12,8 @@ import (
 )
 
 type SavingsGoalRequest struct {
-	Name          string  `json:"name"`
-	TargetAmount  float64 `json:"targetAmount"`
+	Name          string  `json:"name" validate:"required"`
+	TargetAmount  float64 `json:"targetAmount" validate:"required,min=0.01"`
 	CurrentAmount float64 `json:"currentAmount"`
 	TargetDate    string  `json:"targetDate"` // ISO string e.g. "2026-12-31" or RFC3339
 	AccountID     *string `json:"accountId"`
@@ -24,7 +24,7 @@ type SavingsGoalRequest struct {
 func GoalsHandler(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
-		utils.ErrorResponse(w, http.StatusUnauthorized, "Unauthorized")
+		utils.HandleUnauthorized(w)
 		return
 	}
 
@@ -32,7 +32,7 @@ func GoalsHandler(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		goals := make([]database.SavingsGoal, 0)
 		if err := database.DB.Preload("Account").Where("user_id = ?", userID).Find(&goals).Error; err != nil {
-			utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to retrieve goals")
+			utils.HandleDBError(w, err, "retrieve goals")
 			return
 		}
 		utils.JSONResponse(w, http.StatusOK, goals)
@@ -40,12 +40,11 @@ func GoalsHandler(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		var req SavingsGoalRequest
 		if err := utils.ParseJSON(r, &req); err != nil {
-			utils.ErrorResponse(w, http.StatusBadRequest, "Invalid request body")
+			utils.HandleBadRequest(w, "Invalid request body")
 			return
 		}
 
-		if req.Name == "" || req.TargetAmount <= 0 {
-			utils.ErrorResponse(w, http.StatusBadRequest, "Name and positive TargetAmount are required")
+		if !middleware.ValidateAndRespond(w, req) {
 			return
 		}
 
@@ -72,7 +71,7 @@ func GoalsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if err := database.DB.Create(&goal).Error; err != nil {
-			utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to create savings goal")
+			utils.HandleDBError(w, err, "create savings goal")
 			return
 		}
 
@@ -84,7 +83,7 @@ func GoalsHandler(w http.ResponseWriter, r *http.Request) {
 		utils.JSONResponse(w, http.StatusCreated, goal)
 
 	default:
-		utils.ErrorResponse(w, http.StatusMethodNotAllowed, "Method not allowed")
+		utils.HandleMethodNotAllowed(w)
 	}
 }
 
@@ -92,19 +91,19 @@ func GoalsHandler(w http.ResponseWriter, r *http.Request) {
 func GoalDetailHandler(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
-		utils.ErrorResponse(w, http.StatusUnauthorized, "Unauthorized")
+		utils.HandleUnauthorized(w)
 		return
 	}
 
 	goalID := r.PathValue("id")
 	if goalID == "" {
-		utils.ErrorResponse(w, http.StatusBadRequest, "Missing goal ID")
+		utils.HandleBadRequest(w, "Missing goal ID")
 		return
 	}
 
 	var goal database.SavingsGoal
 	if err := database.DB.Where("id = ? AND user_id = ?", goalID, userID).First(&goal).Error; err != nil {
-		utils.ErrorResponse(w, http.StatusNotFound, "Savings goal not found")
+		utils.HandleNotFound(w, "Savings goal")
 		return
 	}
 
@@ -112,12 +111,11 @@ func GoalDetailHandler(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPut:
 		var req SavingsGoalRequest
 		if err := utils.ParseJSON(r, &req); err != nil {
-			utils.ErrorResponse(w, http.StatusBadRequest, "Invalid request body")
+			utils.HandleBadRequest(w, "Invalid request body")
 			return
 		}
 
-		if req.Name == "" || req.TargetAmount <= 0 {
-			utils.ErrorResponse(w, http.StatusBadRequest, "Name and positive TargetAmount are required")
+		if !middleware.ValidateAndRespond(w, req) {
 			return
 		}
 
@@ -137,7 +135,7 @@ func GoalDetailHandler(w http.ResponseWriter, r *http.Request) {
 		goal.UpdatedAt = time.Now()
 
 		if err := database.DB.Save(&goal).Error; err != nil {
-			utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to update savings goal")
+			utils.HandleDBError(w, err, "update savings goal")
 			return
 		}
 
@@ -152,12 +150,12 @@ func GoalDetailHandler(w http.ResponseWriter, r *http.Request) {
 
 	case http.MethodDelete:
 		if err := database.DB.Delete(&goal).Error; err != nil {
-			utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to delete savings goal")
+			utils.HandleDBError(w, err, "delete savings goal")
 			return
 		}
 		utils.JSONResponse(w, http.StatusOK, map[string]string{"message": "Savings goal deleted successfully"})
 
 	default:
-		utils.ErrorResponse(w, http.StatusMethodNotAllowed, "Method not allowed")
+		utils.HandleMethodNotAllowed(w)
 	}
 }

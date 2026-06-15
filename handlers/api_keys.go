@@ -21,7 +21,7 @@ type ApiKeyCreateRequest struct {
 func ApiKeysHandler(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
-		utils.ErrorResponse(w, http.StatusUnauthorized, "Unauthorized")
+		utils.HandleUnauthorized(w)
 		return
 	}
 
@@ -30,7 +30,7 @@ func ApiKeysHandler(w http.ResponseWriter, r *http.Request) {
 		var apiKeys []database.ApiKey
 		// Only select non-revoked ones
 		if err := database.DB.Where("user_id = ? AND revoked_at IS NULL", userID).Find(&apiKeys).Error; err != nil {
-			utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to retrieve API keys")
+			utils.HandleDBError(w, err, "retrieve API keys")
 			return
 		}
 		utils.JSONResponse(w, http.StatusOK, apiKeys)
@@ -38,12 +38,12 @@ func ApiKeysHandler(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		var req ApiKeyCreateRequest
 		if err := utils.ParseJSON(r, &req); err != nil {
-			utils.ErrorResponse(w, http.StatusBadRequest, "Invalid request body")
+			utils.HandleBadRequest(w, "Invalid request body")
 			return
 		}
 
 		if req.Name == "" {
-			utils.ErrorResponse(w, http.StatusBadRequest, "API Key Name is required")
+			utils.HandleBadRequest(w, "API Key Name is required")
 			return
 		}
 
@@ -66,7 +66,7 @@ func ApiKeysHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if err := database.DB.Create(&apiKey).Error; err != nil {
-			utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to create API key record")
+			utils.HandleDBError(w, err, "create API key record")
 			return
 		}
 
@@ -80,7 +80,7 @@ func ApiKeysHandler(w http.ResponseWriter, r *http.Request) {
 		})
 
 	default:
-		utils.ErrorResponse(w, http.StatusMethodNotAllowed, "Method not allowed")
+		utils.HandleMethodNotAllowed(w)
 	}
 }
 
@@ -88,19 +88,19 @@ func ApiKeysHandler(w http.ResponseWriter, r *http.Request) {
 func ApiKeyDetailHandler(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
-		utils.ErrorResponse(w, http.StatusUnauthorized, "Unauthorized")
+		utils.HandleUnauthorized(w)
 		return
 	}
 
 	keyID := r.PathValue("id")
 	if keyID == "" {
-		utils.ErrorResponse(w, http.StatusBadRequest, "Missing API key ID")
+		utils.HandleBadRequest(w, "Missing API key ID")
 		return
 	}
 
 	var apiKey database.ApiKey
 	if err := database.DB.Where("id = ? AND user_id = ?", keyID, userID).First(&apiKey).Error; err != nil {
-		utils.ErrorResponse(w, http.StatusNotFound, "API key not found")
+		utils.HandleNotFound(w, "API key")
 		return
 	}
 
@@ -108,11 +108,11 @@ func ApiKeyDetailHandler(w http.ResponseWriter, r *http.Request) {
 		now := time.Now()
 		apiKey.RevokedAt = &now
 		if err := database.DB.Save(&apiKey).Error; err != nil {
-			utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to revoke API key")
+			utils.HandleDBError(w, err, "revoke API key")
 			return
 		}
 		utils.JSONResponse(w, http.StatusOK, map[string]string{"message": "API key revoked successfully"})
 	} else {
-		utils.ErrorResponse(w, http.StatusMethodNotAllowed, "Method not allowed")
+		utils.HandleMethodNotAllowed(w)
 	}
 }

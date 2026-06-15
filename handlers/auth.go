@@ -29,13 +29,13 @@ type LoginRequest struct {
 // RegisterHandler handles user signup
 func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		utils.ErrorResponse(w, http.StatusMethodNotAllowed, "Method not allowed")
+		utils.HandleMethodNotAllowed(w)
 		return
 	}
 
 	var req RegisterRequest
 	if err := utils.ParseJSON(r, &req); err != nil {
-		utils.ErrorResponse(w, http.StatusBadRequest, "Invalid request body")
+		utils.HandleBadRequest(w, "Invalid request body")
 		return
 	}
 
@@ -53,7 +53,7 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	// Hash password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
-		utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to process password")
+		utils.HandleDBError(w, err, "process password")
 		return
 	}
 
@@ -69,7 +69,7 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	tx := database.DB.Begin()
 	if err := tx.Create(&user).Error; err != nil {
 		tx.Rollback()
-		utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to create user")
+		utils.HandleDBError(w, err, "create user")
 		return
 	}
 
@@ -90,21 +90,21 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 			}
 			if err := tx.Create(&userCat).Error; err != nil {
 				tx.Rollback()
-				utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to setup user categories")
+				utils.HandleDBError(w, err, "setup user categories")
 				return
 			}
 		}
 	}
 
 	if err := tx.Commit().Error; err != nil {
-		utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to save user setup")
+		utils.HandleDBError(w, err, "save user setup")
 		return
 	}
 
 	// Generate JWT
 	token, err := middleware.GenerateToken(user.ID, user.Email)
 	if err != nil {
-		utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to generate session")
+		utils.HandleDBError(w, err, "generate session")
 		return
 	}
 
@@ -129,13 +129,13 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 // LoginHandler handles user signin
 func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		utils.ErrorResponse(w, http.StatusMethodNotAllowed, "Method not allowed")
+		utils.HandleMethodNotAllowed(w)
 		return
 	}
 
 	var req LoginRequest
 	if err := utils.ParseJSON(r, &req); err != nil {
-		utils.ErrorResponse(w, http.StatusBadRequest, "Invalid request body")
+		utils.HandleBadRequest(w, "Invalid request body")
 		return
 	}
 
@@ -145,20 +145,20 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 
 	var user database.User
 	if err := database.DB.Where("email = ?", req.Email).First(&user).Error; err != nil {
-		utils.ErrorResponse(w, http.StatusUnauthorized, "Invalid email or password")
+		utils.HandleUnauthorized(w, "Invalid email or password")
 		return
 	}
 
 	// Check password
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
-		utils.ErrorResponse(w, http.StatusUnauthorized, "Invalid email or password")
+		utils.HandleUnauthorized(w, "Invalid email or password")
 		return
 	}
 
 	// Generate JWT
 	token, err := middleware.GenerateToken(user.ID, user.Email)
 	if err != nil {
-		utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to generate session")
+		utils.HandleDBError(w, err, "generate session")
 		return
 	}
 
@@ -183,7 +183,7 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 // LogoutHandler signs out the user by clearing the auth token cookie
 func LogoutHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		utils.ErrorResponse(w, http.StatusMethodNotAllowed, "Method not allowed")
+		utils.HandleMethodNotAllowed(w)
 		return
 	}
 
@@ -204,13 +204,13 @@ func LogoutHandler(w http.ResponseWriter, r *http.Request) {
 func MeHandler(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
-		utils.ErrorResponse(w, http.StatusUnauthorized, "Unauthorized")
+		utils.HandleUnauthorized(w)
 		return
 	}
 
 	var user database.User
 	if err := database.DB.Where("id = ?", userID).First(&user).Error; err != nil {
-		utils.ErrorResponse(w, http.StatusNotFound, "User not found")
+		utils.HandleNotFound(w, "User")
 		return
 	}
 
@@ -228,13 +228,13 @@ func MeHandler(w http.ResponseWriter, r *http.Request) {
 			TelegramChatID string `json:"telegramChatId"`
 		}
 		if err := utils.ParseJSON(r, &req); err != nil {
-			utils.ErrorResponse(w, http.StatusBadRequest, "Invalid request body")
+			utils.HandleBadRequest(w, "Invalid request body")
 			return
 		}
 
 		user.TelegramChatID = req.TelegramChatID
 		if err := database.DB.Save(&user).Error; err != nil {
-			utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to update user profile")
+			utils.HandleDBError(w, err, "update user profile")
 			return
 		}
 
@@ -246,7 +246,7 @@ func MeHandler(w http.ResponseWriter, r *http.Request) {
 		})
 
 	default:
-		utils.ErrorResponse(w, http.StatusMethodNotAllowed, "Method not allowed")
+		utils.HandleMethodNotAllowed(w)
 	}
 }
 type ApiKeyAuth struct {
