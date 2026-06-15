@@ -13,12 +13,13 @@ import (
 )
 
 type BuyAssetRequest struct {
-	AccountID           string  `json:"accountId"`
-	Symbol              string  `json:"symbol"`
-	Name                string  `json:"name"`
-	Quantity            float64 `json:"quantity"`
-	Price               float64 `json:"price"`
-	DeductFromAccountID *string `json:"deductFromAccountId"` // Optional
+	AccountID           string   `json:"accountId"`
+	Symbol              string   `json:"symbol"`
+	Name                string   `json:"name"`
+	Quantity            float64  `json:"quantity"`
+	Price               float64  `json:"price"`
+	AdminFee            *float64 `json:"adminFee"`
+	DeductFromAccountID *string  `json:"deductFromAccountId"` // Optional
 }
 
 type SellAssetRequest struct {
@@ -83,6 +84,10 @@ func BuyAssetHandler(w http.ResponseWriter, r *http.Request) {
 
 	// 1. Optional: Deduct balance from account
 	if req.DeductFromAccountID != nil && *req.DeductFromAccountID != "" {
+		adminFee := 0.0
+		if req.AdminFee != nil {
+			adminFee = *req.AdminFee
+		}
 		totalCost := req.Quantity * req.Price
 		
 		// Find deduct account
@@ -93,7 +98,7 @@ func BuyAssetHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if err := adjustBalances(tx, userID, *req.DeductFromAccountID, nil, database.TransactionTypeExpense, totalCost, 1); err != nil {
+		if err := adjustBalances(tx, userID, *req.DeductFromAccountID, nil, database.TransactionTypeExpense, totalCost, adminFee, 1); err != nil {
 			tx.Rollback()
 			utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to adjust balance")
 			return
@@ -113,6 +118,7 @@ func BuyAssetHandler(w http.ResponseWriter, r *http.Request) {
 			CategoryID:  catID,
 			Type:        database.TransactionTypeExpense,
 			Amount:      totalCost,
+			AdminFee:    adminFee,
 			Description: fmt.Sprintf("Beli Aset: %s (%s)", req.Name, req.Symbol),
 			Note:        fmt.Sprintf("Pembelian %g unit @ %s", req.Quantity, formatCurrencySimple(req.Price)),
 			Date:        time.Now(),
@@ -230,7 +236,7 @@ func SellAssetHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if err := adjustBalances(tx, userID, *req.AddToAccountID, nil, database.TransactionTypeIncome, totalRevenue, 1); err != nil {
+		if err := adjustBalances(tx, userID, *req.AddToAccountID, nil, database.TransactionTypeIncome, totalRevenue, 0, 1); err != nil {
 			tx.Rollback()
 			utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to adjust balance")
 			return

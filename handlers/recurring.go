@@ -16,9 +16,10 @@ import (
 )
 
 type RecurringBillRequest struct {
-	Name               string  `json:"name"`
-	Amount             float64 `json:"amount"`
-	CategoryID         *string `json:"categoryId"`
+	Name               string   `json:"name"`
+	Amount             float64  `json:"amount"`
+	AdminFee           *float64 `json:"adminFee"`
+	CategoryID         *string  `json:"categoryId"`
 	Frequency          string  `json:"frequency"` // "weekly", "monthly", "yearly"
 	DayOfMonth         int     `json:"dayOfMonth"`
 	AutoPay            bool    `json:"autoPay"`
@@ -67,11 +68,17 @@ func RecurringHandler(w http.ResponseWriter, r *http.Request) {
 			day = 1
 		}
 
+		adminFee := 0.0
+		if req.AdminFee != nil {
+			adminFee = *req.AdminFee
+		}
+
 		bill := database.RecurringBill{
 			ID:                 uuid.New().String(),
 			UserID:             userID,
 			Name:               req.Name,
 			Amount:             req.Amount,
+			AdminFee:           adminFee,
 			CategoryID:         req.CategoryID,
 			Frequency:          freq,
 			DayOfMonth:         day,
@@ -139,6 +146,9 @@ func RecurringDetailHandler(w http.ResponseWriter, r *http.Request) {
 
 		bill.Name = req.Name
 		bill.Amount = req.Amount
+		if req.AdminFee != nil {
+			bill.AdminFee = *req.AdminFee
+		}
 		bill.CategoryID = req.CategoryID
 		bill.Frequency = req.Frequency
 		bill.DayOfMonth = day
@@ -220,7 +230,7 @@ func RecurringPayHandler(w http.ResponseWriter, r *http.Request) {
 	tx := database.DB.Begin()
 
 	// 1. Deduct balance
-	if err := adjustBalances(tx, userID, *bill.AccountID, nil, database.TransactionTypeExpense, bill.Amount, 1); err != nil {
+	if err := adjustBalances(tx, userID, *bill.AccountID, nil, database.TransactionTypeExpense, bill.Amount, bill.AdminFee, 1); err != nil {
 		tx.Rollback()
 		utils.ErrorResponse(w, http.StatusInternalServerError, "Gagal memotong saldo rekening")
 		return
@@ -233,6 +243,7 @@ func RecurringPayHandler(w http.ResponseWriter, r *http.Request) {
 		CategoryID:  bill.CategoryID,
 		Type:        database.TransactionTypeExpense,
 		Amount:      bill.Amount,
+		AdminFee:    bill.AdminFee,
 		Description: fmt.Sprintf("Bayar Tagihan: %s", bill.Name),
 		Note:        fmt.Sprintf("Pembayaran tagihan rutin '%s' secara manual.", bill.Name),
 		Date:        time.Now(),

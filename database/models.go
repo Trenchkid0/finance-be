@@ -103,6 +103,7 @@ type Transaction struct {
 	CategoryID       *string         `gorm:"index;type:varchar(191)" json:"categoryId"` // Nullable (especially for transfers)
 	Type             TransactionType `gorm:"index:idx_user_type_date;type:varchar(50);not null" json:"type"`
 	Amount           float64         `gorm:"type:decimal(15,2);not null" json:"amount"`
+	AdminFee         float64         `gorm:"type:decimal(15,2);default:0;not null" json:"adminFee"`
 	Description      string          `gorm:"type:varchar(191)" json:"description"`
 	Note             string          `gorm:"type:text" json:"note"`
 	Date             time.Time       `gorm:"index;index:idx_user_date;not null" json:"date"`
@@ -139,6 +140,7 @@ type RecurringBill struct {
 	UserID             string          `gorm:"index;index:idx_user_autopay;type:varchar(191);not null" json:"userId"`
 	Name               string          `gorm:"type:varchar(191);not null" json:"name"`
 	Amount             float64         `gorm:"type:decimal(15,2);not null" json:"amount"`
+	AdminFee           float64         `gorm:"type:decimal(15,2);default:0;not null" json:"adminFee"`
 	CategoryID         *string         `gorm:"type:varchar(191)" json:"categoryId"`
 	Frequency          string          `gorm:"type:varchar(50);default:'monthly';not null" json:"frequency"` // "weekly", "monthly", "yearly"
 	DayOfMonth         int             `gorm:"default:1;not null" json:"dayOfMonth"`

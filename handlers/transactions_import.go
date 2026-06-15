@@ -171,7 +171,7 @@ func ImportTransactionsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Reconcile balance
-		if err := adjustBalances(tx, userID, sourceAcc.ID, transferToID, txType, amount, 1); err != nil {
+		if err := adjustBalances(tx, userID, sourceAcc.ID, transferToID, txType, amount, 0, 1); err != nil {
 			errors = append(errors, fmt.Sprintf("Row %d: failed to update balance", i+2))
 			continue
 		}

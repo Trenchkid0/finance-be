@@ -43,7 +43,7 @@ func TransactionDetailHandler(w http.ResponseWriter, r *http.Request) {
 		tx := database.DB.Begin()
 
 		// 1. Rollback old transaction balance effects
-		if err := adjustBalances(tx, userID, transaction.AccountID, transaction.TransferToID, transaction.Type, transaction.Amount, -1); err != nil {
+		if err := adjustBalances(tx, userID, transaction.AccountID, transaction.TransferToID, transaction.Type, transaction.Amount, transaction.AdminFee, -1); err != nil {
 			tx.Rollback()
 			utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to roll back old transaction balances")
 			return
@@ -66,8 +66,12 @@ func TransactionDetailHandler(w http.ResponseWriter, r *http.Request) {
 		if req.TransferToID != nil {
 			targetTransferToID = req.TransferToID
 		}
+		targetAdminFee := transaction.AdminFee
+		if req.AdminFee != nil {
+			targetAdminFee = *req.AdminFee
+		}
 
-		if err := adjustBalances(tx, userID, targetAccID, targetTransferToID, targetType, targetAmount, 1); err != nil {
+		if err := adjustBalances(tx, userID, targetAccID, targetTransferToID, targetType, targetAmount, targetAdminFee, 1); err != nil {
 			tx.Rollback()
 			utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to reconcile new transaction balances")
 			return
@@ -77,6 +81,7 @@ func TransactionDetailHandler(w http.ResponseWriter, r *http.Request) {
 		transaction.AccountID = targetAccID
 		transaction.Type = targetType
 		transaction.Amount = targetAmount
+		transaction.AdminFee = targetAdminFee
 		transaction.TransferToID = targetTransferToID
 		transaction.CategoryID = req.CategoryID
 		if req.Description != "" {
@@ -123,7 +128,7 @@ func TransactionDetailHandler(w http.ResponseWriter, r *http.Request) {
 		tx := database.DB.Begin()
 
 		// Roll back balance effects before deleting
-		if err := adjustBalances(tx, userID, transaction.AccountID, transaction.TransferToID, transaction.Type, transaction.Amount, -1); err != nil {
+		if err := adjustBalances(tx, userID, transaction.AccountID, transaction.TransferToID, transaction.Type, transaction.Amount, transaction.AdminFee, -1); err != nil {
 			tx.Rollback()
 			utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to update balances during deletion")
 			return

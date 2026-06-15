@@ -37,6 +37,7 @@ type TransactionRequest struct {
 	CategoryID      *string                  `json:"categoryId"`
 	Type            database.TransactionType `json:"type" validate:"required,oneof=income|expense|transfer"`
 	Amount          float64                  `json:"amount" validate:"required,min=0.01"`
+	AdminFee        *float64                 `json:"adminFee"`
 	Description     string                   `json:"description"`
 	Note            string                   `json:"note"`
 	Date            string                   `json:"date"` // ISO string e.g. "2026-06-05T00:00:00Z"
@@ -189,49 +190,22 @@ func TransactionsHandler(w http.ResponseWriter, r *http.Request) {
 		// Database transaction to ensure balance reconciliation consistency
 		tx := database.DB.Begin()
 
-		// Verify account ownership
-		var sourceAcc database.FinanceAccount
-		if err := tx.Where("id = ? AND user_id = ?", req.AccountID, userID).First(&sourceAcc).Error; err != nil {
-			tx.Rollback()
-			utils.ErrorResponse(w, http.StatusNotFound, "Source account not found")
-			return
+		adminFee := 0.0
+		if req.AdminFee != nil {
+			adminFee = *req.AdminFee
 		}
 
 		// Reconcile Balance
-		switch req.Type {
-		case database.TransactionTypeIncome:
-			sourceAcc.Balance += req.Amount
-			if err := tx.Save(&sourceAcc).Error; err != nil {
-				tx.Rollback()
-				utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to update account balance")
-				return
+		if err := adjustBalances(tx, userID, req.AccountID, req.TransferToID, req.Type, req.Amount, adminFee, 1); err != nil {
+			tx.Rollback()
+			if strings.Contains(err.Error(), "missing") {
+				utils.ErrorResponse(w, http.StatusBadRequest, err.Error())
+			} else if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "Record NotFound") {
+				utils.ErrorResponse(w, http.StatusNotFound, err.Error())
+			} else {
+				utils.ErrorResponse(w, http.StatusInternalServerError, err.Error())
 			}
-		case database.TransactionTypeExpense:
-			sourceAcc.Balance -= req.Amount
-			if err := tx.Save(&sourceAcc).Error; err != nil {
-				tx.Rollback()
-				utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to update account balance")
-				return
-			}
-		case database.TransactionTypeTransfer:
-			if req.TransferToID == nil || *req.TransferToID == "" {
-				tx.Rollback()
-				utils.ErrorResponse(w, http.StatusBadRequest, "TransferToId is required for transfer transactions")
-				return
-			}
-			var destAcc database.FinanceAccount
-			if err := tx.Where("id = ? AND user_id = ?", *req.TransferToID, userID).First(&destAcc).Error; err != nil {
-				tx.Rollback()
-				utils.ErrorResponse(w, http.StatusNotFound, "Destination account not found")
-				return
-			}
-			sourceAcc.Balance -= req.Amount
-			destAcc.Balance += req.Amount
-			if err := tx.Save(&sourceAcc).Error; err != nil || tx.Save(&destAcc).Error != nil {
-				tx.Rollback()
-				utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to reconcile transfer balances")
-				return
-			}
+			return
 		}
 
 		// Sanitize receipt image URL to store relative path
@@ -251,6 +225,7 @@ func TransactionsHandler(w http.ResponseWriter, r *http.Request) {
 			CategoryID:      req.CategoryID,
 			Type:            req.Type,
 			Amount:          req.Amount,
+			AdminFee:        adminFee,
 			Description:     req.Description,
 			Note:            req.Note,
 			Date:            parsedDate,
@@ -309,7 +284,7 @@ func TransactionsHandler(w http.ResponseWriter, r *http.Request) {
 
 		// Adjust balances for each transaction (reversing their effects)
 		for _, transaction := range transactions {
-			if err := adjustBalances(tx, userID, transaction.AccountID, transaction.TransferToID, transaction.Type, transaction.Amount, -1); err != nil {
+			if err := adjustBalances(tx, userID, transaction.AccountID, transaction.TransferToID, transaction.Type, transaction.Amount, transaction.AdminFee, -1); err != nil {
 				tx.Rollback()
 				utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to update balances during deletion")
 				return
@@ -336,7 +311,7 @@ func TransactionsHandler(w http.ResponseWriter, r *http.Request) {
 
 // adjustBalances helper shifts the balance of accounts when transactions are deleted, created or changed.
 // multiplier: +1 to apply transaction, -1 to roll back transaction
-func adjustBalances(tx *gorm.DB, userID string, accountID string, transferToID *string, txType database.TransactionType, amount float64, multiplier float64) error {
+func adjustBalances(tx *gorm.DB, userID string, accountID string, transferToID *string, txType database.TransactionType, amount float64, adminFee float64, multiplier float64) error {
 	var sourceAcc database.FinanceAccount
 	if err := tx.Where("id = ? AND user_id = ?", accountID, userID).First(&sourceAcc).Error; err != nil {
 		return err
@@ -344,10 +319,10 @@ func adjustBalances(tx *gorm.DB, userID string, accountID string, transferToID *
 
 	switch txType {
 	case database.TransactionTypeIncome:
-		sourceAcc.Balance += (amount * multiplier)
+		sourceAcc.Balance += ((amount - adminFee) * multiplier)
 		return tx.Save(&sourceAcc).Error
 	case database.TransactionTypeExpense:
-		sourceAcc.Balance -= (amount * multiplier)
+		sourceAcc.Balance -= ((amount + adminFee) * multiplier)
 		return tx.Save(&sourceAcc).Error
 	case database.TransactionTypeTransfer:
 		if transferToID == nil || *transferToID == "" {
@@ -357,7 +332,7 @@ func adjustBalances(tx *gorm.DB, userID string, accountID string, transferToID *
 		if err := tx.Where("id = ? AND user_id = ?", *transferToID, userID).First(&destAcc).Error; err != nil {
 			return err
 		}
-		sourceAcc.Balance -= (amount * multiplier)
+		sourceAcc.Balance -= ((amount + adminFee) * multiplier)
 		destAcc.Balance += (amount * multiplier)
 		if err := tx.Save(&sourceAcc).Error; err != nil {
 			return err

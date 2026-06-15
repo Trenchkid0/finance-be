@@ -432,7 +432,7 @@ func checkAutoPayBills() {
 			continue
 		}
 
-		newBalance := acc.Balance - bill.Amount
+		newBalance := acc.Balance - (bill.Amount + bill.AdminFee)
 		if err := tx.Model(&acc).Update("balance", newBalance).Error; err != nil {
 			tx.Rollback()
 			log.Printf("❌ [AutoPay] Failed to update balance for bill '%s': %v", bill.Name, err)
@@ -446,6 +446,7 @@ func checkAutoPayBills() {
 			CategoryID:  bill.CategoryID,
 			Type:        database.TransactionTypeExpense,
 			Amount:      bill.Amount,
+			AdminFee:    bill.AdminFee,
 			Description: fmt.Sprintf("Auto-Pay: %s", bill.Name),
 			Note:        fmt.Sprintf("Pembayaran tagihan rutin '%s' secara otomatis oleh sistem.", bill.Name),
 			Date:        now,
