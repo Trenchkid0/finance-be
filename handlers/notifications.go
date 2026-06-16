@@ -123,5 +123,10 @@ func CreateNotificationHelper(userID, title, message, notifType string) error {
 		IsRead:    false,
 		CreatedAt: time.Now(),
 	}
-	return database.DB.Create(&notif).Error
+	err := database.DB.Create(&notif).Error
+	if err != nil {
+		utils.Log.Error().Err(err).Str("user_id", userID).Str("title", title).Msg("Failed to create notification in DB")
+	}
+	return err
 }
+
