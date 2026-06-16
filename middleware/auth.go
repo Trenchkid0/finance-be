@@ -2,10 +2,12 @@ package middleware
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -14,19 +16,27 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"maybe-finance-backend/database"
+	"maybe-finance-backend/utils"
 )
 
 type contextKey string
 
 const UserIDContextKey contextKey = "userId"
 
-var jwtSecret = []byte(getEnv("JWT_SECRET", "super-secret-default-key-change-me"))
+var jwtSecret []byte
 
-func getEnv(key, fallback string) string {
-	if value, ok := os.LookupEnv(key); ok {
-		return value
+func init() {
+	secret := os.Getenv("JWT_SECRET")
+	if secret == "" {
+		bytes := make([]byte, 32)
+		if _, err := rand.Read(bytes); err != nil {
+			panic("failed to generate random JWT secret: " + err.Error())
+		}
+		jwtSecret = bytes
+		log.Println("⚠️ JWT_SECRET environment variable is not set. A random secret key has been generated for this session.")
+	} else {
+		jwtSecret = []byte(secret)
 	}
-	return fallback
 }
 
 // ✅ PERF: In-memory cache for API key hash → userID lookups (avoids DB hit on every request)
@@ -166,9 +176,7 @@ func AuthRequired(next http.Handler) http.Handler {
 		}
 
 		if !authenticated {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusUnauthorized)
-			w.Write([]byte(`{"error": "Unauthorized: Authentication required"}`))
+			utils.ErrorResponse(w, http.StatusUnauthorized, "Unauthorized: Authentication required")
 			return
 		}
 

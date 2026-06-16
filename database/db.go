@@ -18,10 +18,12 @@ import (
 )
 
 var DB *gorm.DB
+var DbPath string
 
 // InitDB initializes the database and returns the connection.
 // It runs auto-migrations and seeds default data if the database is empty.
 func InitDB(connectionString string) (*gorm.DB, error) {
+	DbPath = connectionString
 	// ✅ PERF: Make SQL logger env-aware — silent in production, verbose only when DEBUG_SQL=true
 	logLevel := logger.Silent
 	if os.Getenv("DEBUG_SQL") == "true" {
@@ -96,6 +98,7 @@ func InitDB(connectionString string) (*gorm.DB, error) {
 		&SavingsGoal{},
 		&RecurringBill{},
 		&AssetHolding{},
+		&Notification{},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to migrate database: %w", err)
@@ -109,6 +112,9 @@ func InitDB(connectionString string) (*gorm.DB, error) {
 			fmt.Println("🚀 Successfully modified key_prefix column to VARCHAR(255)")
 		}
 	}
+
+	// Run SQL migrations
+	runSQLMigrations(db)
 
 	DB = db
 
@@ -140,6 +146,13 @@ func slug(input string) string {
 
 // SeedDemoData replicates the Prisma seed script in Go
 func SeedDemoData(db *gorm.DB) error {
+	appEnv := strings.ToLower(os.Getenv("APP_ENV"))
+	goEnv := strings.ToLower(os.Getenv("GO_ENV"))
+	if appEnv == "production" || appEnv == "prod" || goEnv == "production" || goEnv == "prod" {
+		fmt.Println("⚠️ SeedDemoData: Seeding is disabled in production/prod environment.")
+		return nil
+	}
+
 	// 1. Seed default categories
 	expenseCategories := []struct {
 		name  string
@@ -397,4 +410,29 @@ func SeedDemoData(db *gorm.DB) error {
 	fmt.Printf("   Demo User Email: %s\n", demoUser.Email)
 	fmt.Printf("   Demo API Key (Full): %s\n", fullKey)
 	return nil
+}
+
+// runSQLMigrations reads and executes SQL statements from database/migrations/001_add_performance_indexes.sql
+func runSQLMigrations(db *gorm.DB) {
+	sqlFile := "database/migrations/001_add_performance_indexes.sql"
+	content, err := os.ReadFile(sqlFile)
+	if err != nil {
+		fmt.Printf("⚠️ Failed to read migration SQL file: %v\n", err)
+		return
+	}
+
+	// Split by semicolon and run each query
+	queries := strings.Split(string(content), ";")
+	for _, query := range queries {
+		query = strings.TrimSpace(query)
+		if query == "" || strings.HasPrefix(query, "--") {
+			continue
+		}
+
+		if err := db.Exec(query).Error; err != nil {
+			// Print warning but don't fail, as some indexes might fail due to dialect syntax or already existing
+			fmt.Printf("⚠️ SQL migration query warning/error: %v\n", err)
+		}
+	}
+	fmt.Println("🚀 Automatic SQL migrations completed.")
 }

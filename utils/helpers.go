@@ -3,7 +3,22 @@ package utils
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 )
+
+// FormatRupiah formats a float64 amount to Indonesian Rupiah representation (dot separator)
+func FormatRupiah(amount float64) string {
+	amountVal := int64(amount)
+	amountStr := strconv.FormatInt(amountVal, 10)
+	var formattedAmount []rune
+	for i, r := range amountStr {
+		if i > 0 && (len(amountStr)-i)%3 == 0 {
+			formattedAmount = append(formattedAmount, '.')
+		}
+		formattedAmount = append(formattedAmount, r)
+	}
+	return string(formattedAmount)
+}
 
 // JSONResponse writes a JSON response to the writer
 func JSONResponse(w http.ResponseWriter, status int, data interface{}) {

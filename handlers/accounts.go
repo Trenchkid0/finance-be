@@ -229,11 +229,72 @@ func AccountDetailHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		tx.Commit()
+		if err := tx.Commit().Error; err != nil {
+			tx.Rollback()
+			utils.HandleDBError(w, err, "commit account deletion")
+			return
+		}
+		// Invalidate related caches after successful deletion
 		_ = utils.CacheInvalidateUser(userID)
 		utils.JSONResponse(w, http.StatusOK, map[string]string{"message": "Account deleted successfully"})
 
 	default:
 		utils.HandleMethodNotAllowed(w)
 	}
+}
+
+// RestoreAccountHandler restores a soft-deleted account and its associated transactions
+func RestoreAccountHandler(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	if !ok {
+		utils.HandleUnauthorized(w)
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		utils.HandleMethodNotAllowed(w)
+		return
+	}
+
+	accountID := r.PathValue("id")
+	if accountID == "" {
+		utils.HandleBadRequest(w, "Missing account ID")
+		return
+	}
+
+	var account database.FinanceAccount
+	if err := database.DB.Unscoped().Where("id = ? AND user_id = ?", accountID, userID).First(&account).Error; err != nil {
+		utils.HandleNotFound(w, "Account")
+		return
+	}
+
+	if !account.DeletedAt.Valid {
+		utils.ErrorResponse(w, http.StatusBadRequest, "Account is not deleted")
+		return
+	}
+
+	tx := database.DB.Begin()
+
+	// Restore account record
+	if err := tx.Unscoped().Model(&account).Update("deleted_at", nil).Error; err != nil {
+		tx.Rollback()
+		utils.HandleDBError(w, err, "restore account record")
+		return
+	}
+
+	// Restore associated transactions
+	if err := tx.Unscoped().Model(&database.Transaction{}).Where("(account_id = ? OR transfer_to_id = ?) AND deleted_at IS NOT NULL", accountID, accountID).Update("deleted_at", nil).Error; err != nil {
+		tx.Rollback()
+		utils.HandleDBError(w, err, "restore associated transactions")
+		return
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		tx.Rollback()
+		utils.HandleDBError(w, err, "commit account restore")
+		return
+	}
+
+	_ = utils.CacheInvalidateUser(userID)
+	utils.JSONResponse(w, http.StatusOK, map[string]string{"message": "Account and associated transactions restored successfully"})
 }

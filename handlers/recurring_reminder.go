@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"fmt"
-	"strconv"
 	"time"
 
 	"maybe-finance-backend/database"
@@ -97,17 +96,6 @@ func CheckReminderBills() {
 				categoryName = detailedBill.Category.Name
 			}
 
-			// Format Rupiah
-			amountVal := int64(bill.Amount)
-			amountStr := strconv.FormatInt(amountVal, 10)
-			var formattedAmount []rune
-			for i, r := range amountStr {
-				if i > 0 && (len(amountStr)-i)%3 == 0 {
-					formattedAmount = append(formattedAmount, '.')
-				}
-				formattedAmount = append(formattedAmount, r)
-			}
-
 			// Format days remaining string
 			daysRemaining := int(dueDate.Sub(now).Hours() / 24)
 			var dueStr string
@@ -125,10 +113,13 @@ func CheckReminderBills() {
 				"💳 <b>Sumber Dana:</b> %s\n"+
 				"🏷️ <b>Kategori:</b> %s\n\n"+
 				"<i>Silakan lakukan pembayaran melalui aplikasi Maybe Finance.</i>",
-				bill.Name, dueStr, string(formattedAmount), accountName, categoryName)
+				bill.Name, dueStr, utils.FormatRupiah(bill.Amount), accountName, categoryName)
 
 			utils.Log.Info().Str("chat_id", user.TelegramChatID).Str("bill", bill.Name).Msg("[Reminder] Dispatching Telegram message")
 			sendTelegramMessage(user.TelegramChatID, message)
+
+			// Create in-app notification
+			_ = CreateNotificationHelper(bill.UserID, "Reminder: "+bill.Name, fmt.Sprintf("Your recurring bill '%s' is due %s. Amount: %s.", bill.Name, dueStr, utils.FormatRupiah(bill.Amount)), "bill")
 
 			// Update LastRemindedAt
 			bill.LastRemindedAt = &now

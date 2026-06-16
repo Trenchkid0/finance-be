@@ -199,6 +199,14 @@ func CacheInvalidateUser(userID string) error {
 	return CacheDeletePatternsPipelined(patterns)
 }
 
+// CacheInvalidateAll clears all keys from the cache
+func CacheInvalidateAll() error {
+	if !IsCacheEnabled() {
+		return nil
+	}
+	return RedisClient.FlushDB(ctx).Err()
+}
+
 // BuildCacheKey builds a standardized cache key
 func BuildCacheKey(parts ...string) string {
 	key := ""

@@ -130,12 +130,32 @@ func main() {
 	secureRoute("POST /api/investments/sell", handlers.SellAssetHandler)
 	secureRoute("POST /api/investments/update-price", handlers.UpdatePriceHandler)
 
+	// Soft delete & restore routes
+	secureRoute("POST /api/transactions/{id}/restore", handlers.RestoreTransactionHandler)
+	secureRoute("POST /api/transactions/restore", handlers.BulkRestoreTransactionsHandler)
+	secureRoute("PUT /api/transactions/bulk", handlers.BulkEditTransactionsHandler)
+	secureRoute("POST /api/accounts/{id}/restore", handlers.RestoreAccountHandler)
+
+	// Notifications routes
+	secureRoute("GET /api/notifications", handlers.GetNotificationsHandler)
+	secureRoute("POST /api/notifications/read", handlers.ReadNotificationsHandler)
+	secureRoute("DELETE /api/notifications/{id}", handlers.DeleteNotificationHandler)
+	secureRoute("DELETE /api/notifications", handlers.ClearNotificationsHandler)
+
+	// System Data management routes
+	secureRoute("GET /api/system/backup", handlers.BackupDatabaseHandler)
+	secureRoute("POST /api/system/restore", handlers.RestoreDatabaseHandler)
+	secureRoute("GET /api/system/export-all", handlers.ExportAllDataHandler)
+
+	// Auto-Pay History route
+	secureRoute("GET /api/recurring/auto-pay-history", handlers.AutoPayHistoryHandler)
+
 	// Telegram Bot Webhook (public - called by Telegram servers)
 	mux.HandleFunc("POST /webhook/telegram", handlers.TelegramWebhookHandler)
 
 	// Serve uploaded files
 	uploadsFS := http.FileServer(http.Dir("uploads"))
-	mux.Handle("GET /uploads/", http.StripPrefix("/uploads", uploadsFS))
+	mux.Handle("GET /uploads/", middleware.AuthRequired(http.StripPrefix("/uploads", uploadsFS)))
 
 	// Apply CORS
 	allowedOrigin := getEnv("ALLOWED_ORIGIN", "*")
@@ -146,6 +166,9 @@ func main() {
 
 	// ✅ PERF: Request timeout — prevents slow queries from holding connections forever
 	handler = http.TimeoutHandler(handler, 30*time.Second, `{"error":"request timeout"}`)
+
+	// Apply HTTP Security Headers globally
+	handler = middleware.SecurityHeaders(handler)
 
 	// 5. Start Server with graceful shutdown
 	host := getEnv("HOST", "0.0.0.0")
@@ -430,6 +453,7 @@ func checkAutoPayBills() {
 		if err := tx.Where("id = ? AND user_id = ?", *bill.AccountID, bill.UserID).First(&acc).Error; err != nil {
 			tx.Rollback()
 			utils.Log.Error().Err(err).Str("bill", bill.Name).Msg("[AutoPay] Account not found")
+			_ = handlers.CreateNotificationHelper(bill.UserID, "Auto-Pay Failed: "+bill.Name, fmt.Sprintf("Failed to auto-pay '%s' because the account was not found.", bill.Name), "auto_pay_error")
 			continue
 		}
 
@@ -437,6 +461,7 @@ func checkAutoPayBills() {
 		if err := tx.Model(&acc).Update("balance", newBalance).Error; err != nil {
 			tx.Rollback()
 			utils.Log.Error().Err(err).Str("bill", bill.Name).Msg("[AutoPay] Failed to update balance")
+			_ = handlers.CreateNotificationHelper(bill.UserID, "Auto-Pay Failed: "+bill.Name, fmt.Sprintf("Failed to auto-pay '%s' due to balance update error.", bill.Name), "auto_pay_error")
 			continue
 		}
 
@@ -458,6 +483,7 @@ func checkAutoPayBills() {
 		if err := tx.Create(&transaction).Error; err != nil {
 			tx.Rollback()
 			utils.Log.Error().Err(err).Str("bill", bill.Name).Msg("[AutoPay] Failed to create transaction")
+			_ = handlers.CreateNotificationHelper(bill.UserID, "Auto-Pay Failed: "+bill.Name, fmt.Sprintf("Failed to auto-pay '%s' due to transaction creation error.", bill.Name), "auto_pay_error")
 			continue
 		}
 
@@ -477,6 +503,7 @@ func checkAutoPayBills() {
 
 		// Invalidate cache
 		_ = utils.CacheInvalidateUser(bill.UserID)
+		_ = handlers.CreateNotificationHelper(bill.UserID, "Auto-Pay Success: "+bill.Name, fmt.Sprintf("Successfully auto-paid '%s'. Amount: Rp %s.", bill.Name, utils.FormatRupiah(bill.Amount)), "auto_pay")
 		utils.Log.Info().Str("bill", bill.Name).Float64("amount", bill.Amount).Str("user_id", bill.UserID).Msg("[AutoPay] Successfully paid bill")
 	}
 }

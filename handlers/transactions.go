@@ -11,6 +11,7 @@ import (
 
 	"maybe-finance-backend/database"
 	"maybe-finance-backend/middleware"
+	"maybe-finance-backend/services"
 	"maybe-finance-backend/utils"
 )
 
@@ -153,6 +154,9 @@ func TransactionsHandler(w http.ResponseWriter, r *http.Request) {
 				limit = parsed
 			}
 		}
+		if limit > 200 {
+			limit = 200
+		}
 		offset := 0
 		if offsetStr != "" {
 			if parsed, err := strconv.Atoi(offsetStr); err == nil && parsed >= 0 {
@@ -212,7 +216,7 @@ func TransactionsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Reconcile Balance
-		if err := adjustBalances(tx, userID, req.AccountID, req.TransferToID, req.Type, req.Amount, adminFee, 1); err != nil {
+		if err := services.AdjustBalances(tx, userID, req.AccountID, req.TransferToID, req.Type, req.Amount, adminFee, 1); err != nil {
 			tx.Rollback()
 			if strings.Contains(err.Error(), "missing") {
 				utils.HandleBadRequest(w, err.Error())
@@ -257,7 +261,11 @@ func TransactionsHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		tx.Commit()
+		if err := tx.Commit().Error; err != nil {
+			tx.Rollback()
+			utils.HandleDBError(w, err, "commit transaction creation")
+			return
+		}
 
 		// Invalidate related caches after successful transaction
 		_ = utils.CacheInvalidateUser(userID)
@@ -300,7 +308,7 @@ func TransactionsHandler(w http.ResponseWriter, r *http.Request) {
 
 		// Adjust balances for each transaction (reversing their effects)
 		for _, transaction := range transactions {
-			if err := adjustBalances(tx, userID, transaction.AccountID, transaction.TransferToID, transaction.Type, transaction.Amount, transaction.AdminFee, -1); err != nil {
+			if err := services.AdjustBalances(tx, userID, transaction.AccountID, transaction.TransferToID, transaction.Type, transaction.Amount, transaction.AdminFee, -1); err != nil {
 				tx.Rollback()
 				utils.HandleDBError(w, err, "update balances during deletion")
 				return
@@ -314,7 +322,11 @@ func TransactionsHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		tx.Commit()
+		if err := tx.Commit().Error; err != nil {
+			tx.Rollback()
+			utils.HandleDBError(w, err, "commit transactions deletion")
+			return
+		}
 		utils.JSONResponse(w, http.StatusOK, map[string]interface{}{
 			"message": fmt.Sprintf("Successfully deleted %d transactions", len(transactions)),
 			"count":   len(transactions),
@@ -325,37 +337,177 @@ func TransactionsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// adjustBalances helper shifts the balance of accounts when transactions are deleted, created or changed.
-// multiplier: +1 to apply transaction, -1 to roll back transaction
-func adjustBalances(tx *gorm.DB, userID string, accountID string, transferToID *string, txType database.TransactionType, amount float64, adminFee float64, multiplier float64) error {
-	var sourceAcc database.FinanceAccount
-	if err := tx.Where("id = ? AND user_id = ?", accountID, userID).First(&sourceAcc).Error; err != nil {
-		return err
+// BulkRestoreTransactionsHandler restores multiple soft-deleted transactions
+func BulkRestoreTransactionsHandler(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	if !ok {
+		utils.HandleUnauthorized(w)
+		return
 	}
 
-	switch txType {
-	case database.TransactionTypeIncome:
-		sourceAcc.Balance += ((amount - adminFee) * multiplier)
-		return tx.Save(&sourceAcc).Error
-	case database.TransactionTypeExpense:
-		sourceAcc.Balance -= ((amount + adminFee) * multiplier)
-		return tx.Save(&sourceAcc).Error
-	case database.TransactionTypeTransfer:
-		if transferToID == nil || *transferToID == "" {
-			return fmt.Errorf("transfer target account is missing")
-		}
-		var destAcc database.FinanceAccount
-		if err := tx.Where("id = ? AND user_id = ?", *transferToID, userID).First(&destAcc).Error; err != nil {
-			return err
-		}
-		sourceAcc.Balance -= ((amount + adminFee) * multiplier)
-		destAcc.Balance += (amount * multiplier)
-		if err := tx.Save(&sourceAcc).Error; err != nil {
-			return err
-		}
-		return tx.Save(&destAcc).Error
+	if r.Method != http.MethodPost {
+		utils.HandleMethodNotAllowed(w)
+		return
 	}
 
-	return nil
+	var req struct {
+		IDs []string `json:"ids"`
+	}
+	if err := utils.ParseJSON(r, &req); err != nil {
+		utils.HandleBadRequest(w, "Invalid request body")
+		return
+	}
+
+	if len(req.IDs) == 0 {
+		utils.HandleBadRequest(w, "IDs list cannot be empty")
+		return
+	}
+
+	tx := database.DB.Begin()
+
+	var transactions []database.Transaction
+	if err := tx.Unscoped().Where("id IN ? AND user_id = ? AND deleted_at IS NOT NULL", req.IDs, userID).Find(&transactions).Error; err != nil {
+		tx.Rollback()
+		utils.HandleDBError(w, err, "retrieve transactions for restore")
+		return
+	}
+
+	if len(transactions) == 0 {
+		tx.Rollback()
+		utils.HandleNotFound(w, "Matching transactions")
+		return
+	}
+
+	// Reapply balance effects
+	for _, transaction := range transactions {
+		if err := services.AdjustBalances(tx, userID, transaction.AccountID, transaction.TransferToID, transaction.Type, transaction.Amount, transaction.AdminFee, 1); err != nil {
+			tx.Rollback()
+			utils.HandleDBError(w, err, "update balances during restore")
+			return
+		}
+	}
+
+	// Restore records
+	if err := tx.Unscoped().Model(&database.Transaction{}).Where("id IN ? AND user_id = ?", req.IDs, userID).Update("deleted_at", nil).Error; err != nil {
+		tx.Rollback()
+		utils.HandleDBError(w, err, "restore transactions")
+		return
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		tx.Rollback()
+		utils.HandleDBError(w, err, "commit transactions restore")
+		return
+	}
+
+	_ = utils.CacheInvalidateUser(userID)
+	utils.JSONResponse(w, http.StatusOK, map[string]interface{}{
+		"message": fmt.Sprintf("Successfully restored %d transactions", len(transactions)),
+		"count":   len(transactions),
+	})
 }
+
+// BulkEditTransactionsHandler bulk updates transaction categories/accounts
+func BulkEditTransactionsHandler(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	if !ok {
+		utils.HandleUnauthorized(w)
+		return
+	}
+
+	if r.Method != http.MethodPut {
+		utils.HandleMethodNotAllowed(w)
+		return
+	}
+
+	var req struct {
+		IDs        []string `json:"ids"`
+		AccountID  string   `json:"accountId"`
+		CategoryID *string  `json:"categoryId"`
+	}
+	if err := utils.ParseJSON(r, &req); err != nil {
+		utils.HandleBadRequest(w, "Invalid request body")
+		return
+	}
+
+	if len(req.IDs) == 0 {
+		utils.HandleBadRequest(w, "IDs list cannot be empty")
+		return
+	}
+
+	if req.AccountID == "" && req.CategoryID == nil {
+		utils.HandleBadRequest(w, "Must specify accountId and/or categoryId to edit")
+		return
+	}
+
+	tx := database.DB.Begin()
+
+	var transactions []database.Transaction
+	if err := tx.Where("id IN ? AND user_id = ?", req.IDs, userID).Find(&transactions).Error; err != nil {
+		tx.Rollback()
+		utils.HandleDBError(w, err, "retrieve transactions for edit")
+		return
+	}
+
+	if len(transactions) == 0 {
+		tx.Rollback()
+		utils.HandleNotFound(w, "Matching transactions")
+		return
+	}
+
+	for _, transaction := range transactions {
+		updated := false
+
+		// 1. Bulk edit account and adjust balances
+		if req.AccountID != "" && req.AccountID != transaction.AccountID {
+			// Roll back old account balance
+			if err := services.AdjustBalances(tx, userID, transaction.AccountID, transaction.TransferToID, transaction.Type, transaction.Amount, transaction.AdminFee, -1); err != nil {
+				tx.Rollback()
+				utils.HandleDBError(w, err, "rollback balance for old account")
+				return
+			}
+			// Apply new account balance
+			if err := services.AdjustBalances(tx, userID, req.AccountID, transaction.TransferToID, transaction.Type, transaction.Amount, transaction.AdminFee, 1); err != nil {
+				tx.Rollback()
+				utils.HandleDBError(w, err, "apply balance for new account")
+				return
+			}
+			transaction.AccountID = req.AccountID
+			updated = true
+		}
+
+		// 2. Bulk edit category
+		if req.CategoryID != nil {
+			var newCatID *string
+			if *req.CategoryID != "" && *req.CategoryID != "none" {
+				newCatID = req.CategoryID
+			}
+			transaction.CategoryID = newCatID
+			updated = true
+		}
+
+		if updated {
+			transaction.UpdatedAt = time.Now()
+			if err := tx.Save(&transaction).Error; err != nil {
+				tx.Rollback()
+				utils.HandleDBError(w, err, "save updated transaction")
+				return
+			}
+		}
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		tx.Rollback()
+		utils.HandleDBError(w, err, "commit bulk edits")
+		return
+	}
+
+	_ = utils.CacheInvalidateUser(userID)
+	utils.JSONResponse(w, http.StatusOK, map[string]interface{}{
+		"message": fmt.Sprintf("Successfully updated %d transactions", len(transactions)),
+		"count":   len(transactions),
+	})
+}
+
+
 

@@ -73,6 +73,16 @@ func TelegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	secretToken := os.Getenv("TELEGRAM_WEBHOOK_SECRET")
+	if secretToken != "" {
+		incomingToken := r.Header.Get("X-Telegram-Bot-Api-Secret-Token")
+		if incomingToken != secretToken {
+			utils.Log.Warn().Msg("[Telegram Webhook] Unauthorized request: secret token mismatch")
+			utils.ErrorResponse(w, http.StatusUnauthorized, "Unauthorized")
+			return
+		}
+	}
+
 	var update TelegramUpdate
 	if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
 		utils.HandleBadRequest(w, "Invalid JSON payload")
@@ -85,8 +95,7 @@ func TelegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Always return 200 OK to Telegram to prevent retries
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	utils.JSONResponse(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func handleTelegramMessage(msg *TelegramMessage) {

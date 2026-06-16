@@ -10,6 +10,7 @@ import (
 
 	"maybe-finance-backend/database"
 	"maybe-finance-backend/middleware"
+	"maybe-finance-backend/services"
 	"maybe-finance-backend/utils"
 )
 
@@ -171,7 +172,7 @@ func ImportTransactionsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Reconcile balance
-		if err := adjustBalances(tx, userID, sourceAcc.ID, transferToID, txType, amount, 0, 1); err != nil {
+		if err := services.AdjustBalances(tx, userID, sourceAcc.ID, transferToID, txType, amount, 0, 1); err != nil {
 			errors = append(errors, fmt.Sprintf("Row %d: failed to update balance", i+2))
 			continue
 		}

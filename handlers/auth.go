@@ -3,9 +3,9 @@ package handlers
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
-	"fmt"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -111,13 +111,16 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Set Auth Cookie
+	appEnv := strings.ToLower(os.Getenv("APP_ENV"))
+	isSecure := appEnv == "production" || appEnv == "prod"
+
 	http.SetCookie(w, &http.Cookie{
 		Name:     "auth_token",
 		Value:    token,
 		Expires:  time.Now().Add(7 * 24 * time.Hour),
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   false, // Set to true in HTTPS production
+		Secure:   isSecure,
 		SameSite: http.SameSiteLaxMode,
 	})
 
@@ -165,12 +168,15 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Set Auth Cookie
+	appEnv := strings.ToLower(os.Getenv("APP_ENV"))
+	isSecure := appEnv == "production" || appEnv == "prod"
+
 	cookie := &http.Cookie{
 		Name:     "auth_token",
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   false, // Set to true in HTTPS production
+		Secure:   isSecure,
 		SameSite: http.SameSiteLaxMode,
 	}
 
@@ -256,36 +262,7 @@ func MeHandler(w http.ResponseWriter, r *http.Request) {
 		utils.HandleMethodNotAllowed(w)
 	}
 }
-type ApiKeyAuth struct {
-	UserID string
-	Name   string
-}
 
-// APIKeyAuthHelper authenticates an incoming request via Bearer API prefix key.
-// Performs sha256 hash validation against database.
-func APIKeyAuthHelper(r *http.Request) (*ApiKeyAuth, error) {
-	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" || len(authHeader) < 8 || authHeader[:7] != "Bearer " {
-		return nil, errors.New("missing or invalid authorization header")
-	}
-
-	plainKey := authHeader[7:]
-	hash := sha256.Sum256([]byte(plainKey))
-	hashHex := hex.EncodeToString(hash[:])
-
-	var apiKey database.ApiKey
-	if err := database.DB.Where("key_hash = ? AND revoked_at IS NULL", hashHex).First(&apiKey).Error; err != nil {
-		return nil, errors.New("invalid or revoked API key")
-	}
-
-	now := time.Now()
-	database.DB.Model(&apiKey).Update("last_used_at", &now)
-
-	return &ApiKeyAuth{
-		UserID: apiKey.UserID,
-		Name:   apiKey.Name,
-	}, nil
-}
 
 type ForgotPasswordRequest struct {
 	Email string `json:"email" validate:"required,email"`
@@ -309,7 +286,7 @@ func ForgotPasswordHandler(w http.ResponseWriter, r *http.Request) {
 
 	var user database.User
 	if err := database.DB.Where("email = ?", req.Email).First(&user).Error; err != nil {
-		utils.ErrorResponse(w, http.StatusNotFound, "Email tidak terdaftar")
+		utils.ErrorResponse(w, http.StatusNotFound, "Email not registered")
 		return
 	}
 
@@ -324,21 +301,18 @@ func ForgotPasswordHandler(w http.ResponseWriter, r *http.Request) {
 	
 	user.ResetToken = hashHex
 	user.ResetTokenExpires = &expires
-	
 	if err := database.DB.Save(&user).Error; err != nil {
 		utils.HandleDBError(w, err, "save reset token")
 		return
 	}
 
-	// In sandbox/dev mode, we return the simulated reset url
-	resetUrl := fmt.Sprintf("/reset-password?token=%s&email=%s", token, req.Email)
+	// Log the reset URL for simulated debugging purposes (dev mode)
+	utils.Log.Info().Str("email", req.Email).Str("token", token).Msg("Simulating sending password reset email")
 
 	utils.JSONResponse(w, http.StatusOK, map[string]interface{}{
-		"message":  "Reset link sent successfully",
-		"resetUrl": resetUrl,
+		"message": "Reset link sent successfully",
 	})
 }
-
 type ResetPasswordRequest struct {
 	Token    string `json:"token" validate:"required"`
 	Email    string `json:"email" validate:"required,email"`

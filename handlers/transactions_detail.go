@@ -7,6 +7,7 @@ import (
 
 	"maybe-finance-backend/database"
 	"maybe-finance-backend/middleware"
+	"maybe-finance-backend/services"
 	"maybe-finance-backend/utils"
 )
 
@@ -46,7 +47,7 @@ func TransactionDetailHandler(w http.ResponseWriter, r *http.Request) {
 		tx := database.DB.Begin()
 
 		// 1. Rollback old transaction balance effects
-		if err := adjustBalances(tx, userID, transaction.AccountID, transaction.TransferToID, transaction.Type, transaction.Amount, transaction.AdminFee, -1); err != nil {
+		if err := services.AdjustBalances(tx, userID, transaction.AccountID, transaction.TransferToID, transaction.Type, transaction.Amount, transaction.AdminFee, -1); err != nil {
 			tx.Rollback()
 			utils.HandleDBError(w, err, "roll back old transaction balances")
 			return
@@ -74,7 +75,7 @@ func TransactionDetailHandler(w http.ResponseWriter, r *http.Request) {
 			targetAdminFee = *req.AdminFee
 		}
 
-		if err := adjustBalances(tx, userID, targetAccID, targetTransferToID, targetType, targetAmount, targetAdminFee, 1); err != nil {
+		if err := services.AdjustBalances(tx, userID, targetAccID, targetTransferToID, targetType, targetAmount, targetAdminFee, 1); err != nil {
 			tx.Rollback()
 			utils.HandleDBError(w, err, "reconcile new transaction balances")
 			return
@@ -116,7 +117,11 @@ func TransactionDetailHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		tx.Commit()
+		if err := tx.Commit().Error; err != nil {
+			tx.Rollback()
+			utils.HandleDBError(w, err, "commit transaction update")
+			return
+		}
 
 		// Invalidate related caches after successful update
 		_ = utils.CacheInvalidateUser(userID)
@@ -131,7 +136,7 @@ func TransactionDetailHandler(w http.ResponseWriter, r *http.Request) {
 		tx := database.DB.Begin()
 
 		// Roll back balance effects before deleting
-		if err := adjustBalances(tx, userID, transaction.AccountID, transaction.TransferToID, transaction.Type, transaction.Amount, transaction.AdminFee, -1); err != nil {
+		if err := services.AdjustBalances(tx, userID, transaction.AccountID, transaction.TransferToID, transaction.Type, transaction.Amount, transaction.AdminFee, -1); err != nil {
 			tx.Rollback()
 			utils.HandleDBError(w, err, "update balances during deletion")
 			return
@@ -143,7 +148,11 @@ func TransactionDetailHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		tx.Commit()
+		if err := tx.Commit().Error; err != nil {
+			tx.Rollback()
+			utils.HandleDBError(w, err, "commit transaction deletion")
+			return
+		}
 
 		// Invalidate related caches after successful deletion
 		_ = utils.CacheInvalidateUser(userID)
@@ -154,4 +163,60 @@ func TransactionDetailHandler(w http.ResponseWriter, r *http.Request) {
 	default:
 		utils.HandleMethodNotAllowed(w)
 	}
+}
+
+// RestoreTransactionHandler restores a soft-deleted transaction
+func RestoreTransactionHandler(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	if !ok {
+		utils.HandleUnauthorized(w)
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		utils.HandleMethodNotAllowed(w)
+		return
+	}
+
+	txID := r.PathValue("id")
+	if txID == "" {
+		utils.HandleBadRequest(w, "Missing transaction ID")
+		return
+	}
+
+	var transaction database.Transaction
+	if err := database.DB.Unscoped().Where("id = ? AND user_id = ?", txID, userID).First(&transaction).Error; err != nil {
+		utils.HandleNotFound(w, "Transaction")
+		return
+	}
+
+	if !transaction.DeletedAt.Valid {
+		utils.ErrorResponse(w, http.StatusBadRequest, "Transaction is not deleted")
+		return
+	}
+
+	tx := database.DB.Begin()
+
+	// Reapply balance effects
+	if err := services.AdjustBalances(tx, userID, transaction.AccountID, transaction.TransferToID, transaction.Type, transaction.Amount, transaction.AdminFee, 1); err != nil {
+		tx.Rollback()
+		utils.HandleDBError(w, err, "apply balances during restore")
+		return
+	}
+
+	// Clear DeletedAt
+	if err := tx.Unscoped().Model(&transaction).Update("deleted_at", nil).Error; err != nil {
+		tx.Rollback()
+		utils.HandleDBError(w, err, "restore transaction record")
+		return
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		tx.Rollback()
+		utils.HandleDBError(w, err, "commit transaction restore")
+		return
+	}
+
+	_ = utils.CacheInvalidateUser(userID)
+	utils.JSONResponse(w, http.StatusOK, map[string]string{"message": "Transaction restored successfully"})
 }

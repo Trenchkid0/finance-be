@@ -3,11 +3,11 @@ package handlers
 import (
 	"fmt"
 	"net/http"
-	"strconv"
 	"time"
 
 	"maybe-finance-backend/database"
 	"maybe-finance-backend/middleware"
+	"maybe-finance-backend/services"
 	"maybe-finance-backend/utils"
 )
 
@@ -37,14 +37,14 @@ func RecurringPayHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if bill.AccountID == nil || *bill.AccountID == "" {
-		utils.HandleBadRequest(w, "Tagihan ini belum dikaitkan dengan akun pembayaran (rekening/dompet)")
+		utils.HandleBadRequest(w, "This bill is not linked to a payment account")
 		return
 	}
 
 	tx := database.DB.Begin()
 
 	// 1. Deduct balance
-	if err := adjustBalances(tx, userID, *bill.AccountID, nil, database.TransactionTypeExpense, bill.Amount, bill.AdminFee, 1); err != nil {
+	if err := services.AdjustBalances(tx, userID, *bill.AccountID, nil, database.TransactionTypeExpense, bill.Amount, bill.AdminFee, 1); err != nil {
 		tx.Rollback()
 		utils.HandleDBError(w, err, "deduct balance for recurring payment")
 		return
@@ -101,17 +101,6 @@ func RecurringPayHandler(w http.ResponseWriter, r *http.Request) {
 				categoryName = detailedBill.Category.Name
 			}
 			
-			// Format Rupiah manually for pretty formatting (dot separator)
-			amountVal := int64(bill.Amount)
-			amountStr := strconv.FormatInt(amountVal, 10)
-			var formattedAmount []rune
-			for i, r := range amountStr {
-				if i > 0 && (len(amountStr)-i)%3 == 0 {
-					formattedAmount = append(formattedAmount, '.')
-				}
-				formattedAmount = append(formattedAmount, r)
-			}
-			
 			msgText := fmt.Sprintf("💸 <b>Pembayaran Tagihan Rutin Berhasil!</b>\n\n"+
 				"📝 <b>Nama Tagihan:</b> %s\n"+
 				"💰 <b>Jumlah:</b> Rp %s\n"+
@@ -119,7 +108,7 @@ func RecurringPayHandler(w http.ResponseWriter, r *http.Request) {
 				"🏷️ <b>Kategori:</b> %s\n"+
 				"📅 <b>Tanggal:</b> %s\n\n"+
 				"<i>Transaksi telah otomatis tercatat di aplikasi Maybe Finance Anda.</i>",
-				bill.Name, string(formattedAmount), accountName, categoryName, now.Format("02-01-2006 15:04:05"))
+				bill.Name, utils.FormatRupiah(bill.Amount), accountName, categoryName, now.Format("02-01-2006 15:04:05"))
 			
 			sendTelegramMessage(user.TelegramChatID, msgText)
 		}
@@ -129,7 +118,7 @@ func RecurringPayHandler(w http.ResponseWriter, r *http.Request) {
 	_ = utils.CacheInvalidateUser(userID)
 
 	utils.JSONResponse(w, http.StatusOK, map[string]interface{}{
-		"message":     "Pembayaran tagihan berhasil dicatat",
+		"message":     "Bill payment recorded successfully",
 		"transaction": transaction,
 		"bill":        bill,
 	})

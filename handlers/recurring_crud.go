@@ -190,3 +190,25 @@ func RecurringDetailHandler(w http.ResponseWriter, r *http.Request) {
 		utils.HandleMethodNotAllowed(w)
 	}
 }
+
+// AutoPayHistoryHandler returns transactions created by auto-pay (description LIKE "Auto-Pay:%")
+func AutoPayHistoryHandler(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	if !ok {
+		utils.HandleUnauthorized(w)
+		return
+	}
+
+	if r.Method != http.MethodGet {
+		utils.HandleMethodNotAllowed(w)
+		return
+	}
+
+	var transactions []database.Transaction
+	if err := database.DB.Preload("Category").Preload("Account").Where("user_id = ? AND description LIKE ?", userID, "Auto-Pay:%").Order("date DESC").Find(&transactions).Error; err != nil {
+		utils.HandleDBError(w, err, "fetch auto-pay history")
+		return
+	}
+
+	utils.JSONResponse(w, http.StatusOK, transactions)
+}

@@ -9,6 +9,7 @@ import (
 
 	"maybe-finance-backend/database"
 	"maybe-finance-backend/middleware"
+	"maybe-finance-backend/services"
 	"maybe-finance-backend/utils"
 )
 
@@ -53,7 +54,7 @@ func BuyAssetHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if err := adjustBalances(tx, userID, *req.DeductFromAccountID, nil, database.TransactionTypeExpense, totalCost, adminFee, 1); err != nil {
+		if err := services.AdjustBalances(tx, userID, *req.DeductFromAccountID, nil, database.TransactionTypeExpense, totalCost, adminFee, 1); err != nil {
 			tx.Rollback()
 			utils.HandleDBError(w, err, "adjust balance for purchase")
 			return
@@ -174,7 +175,7 @@ func SellAssetHandler(w http.ResponseWriter, r *http.Request) {
 
 	if req.Quantity > holding.Quantity {
 		tx.Rollback()
-		utils.HandleBadRequest(w, "Jumlah penjualan melebihi jumlah kepemilikan")
+		utils.HandleBadRequest(w, "Sale quantity exceeds owned quantity")
 		return
 	}
 
@@ -190,7 +191,7 @@ func SellAssetHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if err := adjustBalances(tx, userID, *req.AddToAccountID, nil, database.TransactionTypeIncome, totalRevenue, 0, 1); err != nil {
+		if err := services.AdjustBalances(tx, userID, *req.AddToAccountID, nil, database.TransactionTypeIncome, totalRevenue, 0, 1); err != nil {
 			tx.Rollback()
 			utils.HandleDBError(w, err, "adjust balance for sale")
 			return
@@ -253,7 +254,7 @@ func SellAssetHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = utils.CacheInvalidateUser(userID)
-	utils.JSONResponse(w, http.StatusOK, map[string]string{"message": "Penjualan aset berhasil dicatat"})
+	utils.JSONResponse(w, http.StatusOK, map[string]string{"message": "Asset sale recorded successfully"})
 }
 
 // UpdatePriceHandler updates the current price of a holding

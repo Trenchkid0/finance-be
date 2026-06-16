@@ -29,7 +29,7 @@ func AIScanHandler(w http.ResponseWriter, r *http.Request) {
 		utils.JSONResponse(w, http.StatusOK, AIScanResponse{
 			OK:    false,
 			Code:  "ai_disabled",
-			Error: "Scan AI belum aktif. Masukkan DEEPSEEK_API_KEY di file environment server Anda.",
+			Error: "Scan AI is not active. Please insert DEEPSEEK_API_KEY in your server environment file.",
 		})
 		return
 	}
@@ -49,7 +49,7 @@ func AIScanHandler(w http.ResponseWriter, r *http.Request) {
 		utils.JSONResponse(w, http.StatusOK, AIScanResponse{
 			OK:    false,
 			Code:  "invalid_input",
-			Error: "Teks terlalu pendek. Tempel minimal 1 baris struk atau notifikasi.",
+			Error: "Text is too short. Please paste at least one line of receipt or notification.",
 		})
 		return
 	}
@@ -57,7 +57,7 @@ func AIScanHandler(w http.ResponseWriter, r *http.Request) {
 		utils.JSONResponse(w, http.StatusOK, AIScanResponse{
 			OK:    false,
 			Code:  "invalid_input",
-			Error: "Teks terlalu panjang (maksimal 4000 karakter).",
+			Error: "Text is too long (maximum 4000 characters).",
 		})
 		return
 	}
@@ -70,7 +70,7 @@ func AIScanHandler(w http.ResponseWriter, r *http.Request) {
 		utils.JSONResponse(w, http.StatusOK, AIScanResponse{
 			OK:    false,
 			Code:  "no_accounts",
-			Error: "Tambahkan minimal satu rekening/dompet sebelum memakai Scan AI.",
+			Error: "Add at least one account/wallet before using Scan AI.",
 		})
 		return
 	}
@@ -176,7 +176,7 @@ Teks transaksi:
 		utils.JSONResponse(w, http.StatusOK, AIScanResponse{
 			OK:    false,
 			Code:  "unrecognized",
-			Error: "AI gagal mengenali pola transaksi yang valid dari teks tersebut.",
+			Error: "AI failed to recognize a valid transaction pattern from the text.",
 		})
 		return
 	}

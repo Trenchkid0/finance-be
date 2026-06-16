@@ -2,6 +2,9 @@ package database
 
 import (
 	"time"
+
+	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 type AccountType string
@@ -58,9 +61,10 @@ type FinanceAccount struct {
 	Currency  string      `gorm:"type:varchar(10);default:'IDR';not null" json:"currency"`
 	Icon      string      `gorm:"type:varchar(100)" json:"icon"`
 	Color     string      `gorm:"type:varchar(50)" json:"color"`
-	IsActive  bool        `gorm:"index:idx_user_active;default:true;not null" json:"isActive"`
-	CreatedAt time.Time   `json:"createdAt"`
-	UpdatedAt time.Time   `json:"updatedAt"`
+	IsActive  bool           `gorm:"index:idx_user_active;default:true;not null" json:"isActive"`
+	CreatedAt time.Time      `json:"createdAt"`
+	UpdatedAt time.Time      `json:"updatedAt"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
 // Category represents transaction categories.
@@ -99,7 +103,7 @@ type Budget struct {
 
 // Transaction represents a single income, expense, or transfer.
 type Transaction struct {
-	ID               uint            `gorm:"primaryKey;autoIncrement" json:"id"`
+	ID               string          `gorm:"primaryKey;type:varchar(191)" json:"id"`
 	UserID           string          `gorm:"index;index:idx_user_date;index:idx_user_type_date;type:varchar(191);not null" json:"userId"`
 	AccountID        string          `gorm:"index;type:varchar(191);not null" json:"accountId"`
 	CategoryID       *string         `gorm:"index;type:varchar(191)" json:"categoryId"` // Nullable (especially for transfers)
@@ -117,8 +121,9 @@ type Transaction struct {
 	Account    *FinanceAccount `gorm:"foreignKey:AccountID" json:"account,omitempty"`
 	TransferTo *FinanceAccount `gorm:"foreignKey:TransferToID" json:"transferTo,omitempty"`
 
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	CreatedAt time.Time      `json:"createdAt"`
+	UpdatedAt time.Time      `json:"updatedAt"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
 // SavingsGoal represents a saving target linked to a user.
@@ -172,5 +177,24 @@ type AssetHolding struct {
 	Account      *FinanceAccount `gorm:"foreignKey:AccountID" json:"account,omitempty"`
 	CreatedAt    time.Time       `json:"createdAt"`
 	UpdatedAt    time.Time       `json:"updatedAt"`
+}
+
+// BeforeCreate GORM hook to automatically generate UUID for Transaction ID
+func (t *Transaction) BeforeCreate(tx *gorm.DB) error {
+	if t.ID == "" {
+		t.ID = uuid.New().String()
+	}
+	return nil
+}
+
+// Notification represents an in-app alert or reminder
+type Notification struct {
+	ID        string    `gorm:"primaryKey;type:varchar(191)" json:"id"`
+	UserID    string    `gorm:"index;type:varchar(191);not null" json:"userId"`
+	Title     string    `gorm:"type:varchar(191);not null" json:"title"`
+	Message   string    `gorm:"type:text;not null" json:"message"`
+	Type      string    `gorm:"type:varchar(50);not null" json:"type"` // "bill", "auto_pay", "info"
+	IsRead    bool      `gorm:"default:false;not null" json:"isRead"`
+	CreatedAt time.Time `json:"createdAt"`
 }
 
