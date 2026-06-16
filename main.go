@@ -68,6 +68,8 @@ func main() {
 	mux.HandleFunc("POST /api/auth/login", handlers.LoginHandler)
 	mux.HandleFunc("POST /api/auth/register", handlers.RegisterHandler)
 	mux.HandleFunc("POST /api/auth/logout", handlers.LogoutHandler)
+	mux.HandleFunc("POST /api/auth/forgot-password", handlers.ForgotPasswordHandler)
+	mux.HandleFunc("POST /api/auth/reset-password", handlers.ResetPasswordHandler)
 
 	// Secured Routes Wrapper
 	secureRoute := func(pattern string, handler http.HandlerFunc) {

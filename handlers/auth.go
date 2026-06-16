@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -24,6 +25,7 @@ type RegisterRequest struct {
 type LoginRequest struct {
 	Email    string `json:"email" validate:"required,email"`
 	Password string `json:"password" validate:"required"`
+	Remember bool   `json:"remember"`
 }
 
 // RegisterHandler handles user signup
@@ -163,15 +165,20 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Set Auth Cookie
-	http.SetCookie(w, &http.Cookie{
+	cookie := &http.Cookie{
 		Name:     "auth_token",
 		Value:    token,
-		Expires:  time.Now().Add(7 * 24 * time.Hour),
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   false, // Set to true in HTTPS production
 		SameSite: http.SameSiteLaxMode,
-	})
+	}
+
+	if req.Remember {
+		cookie.Expires = time.Now().Add(30 * 24 * time.Hour)
+	}
+
+	http.SetCookie(w, cookie)
 
 	utils.JSONResponse(w, http.StatusOK, map[string]interface{}{
 		"id":    user.ID,
@@ -278,4 +285,119 @@ func APIKeyAuthHelper(r *http.Request) (*ApiKeyAuth, error) {
 		UserID: apiKey.UserID,
 		Name:   apiKey.Name,
 	}, nil
+}
+
+type ForgotPasswordRequest struct {
+	Email string `json:"email" validate:"required,email"`
+}
+
+func ForgotPasswordHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		utils.HandleMethodNotAllowed(w)
+		return
+	}
+
+	var req ForgotPasswordRequest
+	if err := utils.ParseJSON(r, &req); err != nil {
+		utils.HandleBadRequest(w, "Invalid request body")
+		return
+	}
+
+	if !middleware.ValidateAndRespond(w, req) {
+		return
+	}
+
+	var user database.User
+	if err := database.DB.Where("email = ?", req.Email).First(&user).Error; err != nil {
+		utils.ErrorResponse(w, http.StatusNotFound, "Email tidak terdaftar")
+		return
+	}
+
+	// Generate reset token
+	token := uuid.New().String()
+	
+	// Store hash of token in DB
+	hash := sha256.Sum256([]byte(token))
+	hashHex := hex.EncodeToString(hash[:])
+	
+	expires := time.Now().Add(1 * time.Hour)
+	
+	user.ResetToken = hashHex
+	user.ResetTokenExpires = &expires
+	
+	if err := database.DB.Save(&user).Error; err != nil {
+		utils.HandleDBError(w, err, "save reset token")
+		return
+	}
+
+	// In sandbox/dev mode, we return the simulated reset url
+	resetUrl := fmt.Sprintf("/reset-password?token=%s&email=%s", token, req.Email)
+
+	utils.JSONResponse(w, http.StatusOK, map[string]interface{}{
+		"message":  "Reset link sent successfully",
+		"resetUrl": resetUrl,
+	})
+}
+
+type ResetPasswordRequest struct {
+	Token    string `json:"token" validate:"required"`
+	Email    string `json:"email" validate:"required,email"`
+	Password string `json:"password" validate:"required,min=8"`
+}
+
+func ResetPasswordHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		utils.HandleMethodNotAllowed(w)
+		return
+	}
+
+	var req ResetPasswordRequest
+	if err := utils.ParseJSON(r, &req); err != nil {
+		utils.HandleBadRequest(w, "Invalid request body")
+		return
+	}
+
+	if !middleware.ValidateAndRespond(w, req) {
+		return
+	}
+
+	var user database.User
+	if err := database.DB.Where("email = ?", req.Email).First(&user).Error; err != nil {
+		utils.ErrorResponse(w, http.StatusNotFound, "Email tidak terdaftar")
+		return
+	}
+
+	if user.ResetToken == "" || user.ResetTokenExpires == nil || user.ResetTokenExpires.Before(time.Now()) {
+		utils.ErrorResponse(w, http.StatusBadRequest, "Token reset password tidak valid atau sudah kedaluwarsa")
+		return
+	}
+
+	// Verify token hash
+	hash := sha256.Sum256([]byte(req.Token))
+	hashHex := hex.EncodeToString(hash[:])
+	
+	if user.ResetToken != hashHex {
+		utils.ErrorResponse(w, http.StatusBadRequest, "Token reset password tidak valid")
+		return
+	}
+
+	// Hash new password
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		utils.HandleDBError(w, err, "process password")
+		return
+	}
+
+	user.Password = string(hashedPassword)
+	user.ResetToken = ""
+	user.ResetTokenExpires = nil
+
+	if err := database.DB.Save(&user).Error; err != nil {
+		utils.HandleDBError(w, err, "update password")
+		return
+	}
+
+	utils.JSONResponse(w, http.StatusOK, map[string]string{
+		"message": "Kata sandi berhasil diperbarui",
+	})
 }

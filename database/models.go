@@ -35,15 +35,17 @@ type User struct {
 	Email         string           `gorm:"uniqueIndex;type:varchar(191)" json:"email"`
 	EmailVerified *time.Time       `json:"emailVerified,omitempty"`
 	Image         string           `gorm:"type:varchar(191)" json:"image"`
-	Password       string           `gorm:"type:varchar(255)" json:"-"` // Hashed, never expose in JSON
-	TelegramChatID string           `gorm:"type:varchar(191)" json:"telegramChatId,omitempty"`
-	CreatedAt      time.Time        `json:"createdAt"`
-	UpdatedAt     time.Time        `json:"updatedAt"`
-	Accounts      []FinanceAccount `gorm:"foreignKey:UserID;constraint:OnDelete:Cascade" json:"-"`
-	Categories    []Category       `gorm:"foreignKey:UserID;constraint:OnDelete:Cascade" json:"-"`
-	Transactions  []Transaction    `gorm:"foreignKey:UserID;constraint:OnDelete:Cascade" json:"-"`
-	ApiKeys       []ApiKey         `gorm:"foreignKey:UserID;constraint:OnDelete:Cascade" json:"-"`
-	Budgets       []Budget         `gorm:"foreignKey:UserID;constraint:OnDelete:Cascade" json:"-"`
+	Password          string           `gorm:"type:varchar(255)" json:"-"` // Hashed, never expose in JSON
+	TelegramChatID    string           `gorm:"type:varchar(191)" json:"telegramChatId,omitempty"`
+	ResetToken        string           `gorm:"type:varchar(255)" json:"-"`
+	ResetTokenExpires *time.Time       `json:"-"`
+	CreatedAt         time.Time        `json:"createdAt"`
+	UpdatedAt         time.Time        `json:"updatedAt"`
+	Accounts          []FinanceAccount `gorm:"foreignKey:UserID;constraint:OnDelete:Cascade" json:"-"`
+	Categories        []Category       `gorm:"foreignKey:UserID;constraint:OnDelete:Cascade" json:"-"`
+	Transactions      []Transaction    `gorm:"foreignKey:UserID;constraint:OnDelete:Cascade" json:"-"`
+	ApiKeys           []ApiKey         `gorm:"foreignKey:UserID;constraint:OnDelete:Cascade" json:"-"`
+	Budgets           []Budget         `gorm:"foreignKey:UserID;constraint:OnDelete:Cascade" json:"-"`
 }
 
 // FinanceAccount corresponds to the finance_accounts table (source/dest of funds).
