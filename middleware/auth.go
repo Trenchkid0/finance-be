@@ -25,7 +25,8 @@ const UserIDContextKey contextKey = "userId"
 
 var jwtSecret []byte
 
-func init() {
+// InitJWT loads the JWT secret from environment. Must be called AFTER .env is loaded.
+func InitJWT() {
 	secret := os.Getenv("JWT_SECRET")
 	if secret == "" {
 		bytes := make([]byte, 32)

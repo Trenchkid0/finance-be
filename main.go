@@ -35,6 +35,9 @@ func main() {
 	// 1. Load env variables from .env file if it exists
 	loadEnv()
 
+	// 1b. Initialize JWT secret (must run after .env is loaded)
+	middleware.InitJWT()
+
 	// 2. Initialize database
 	dbPath := getEnv("DATABASE_URL", "maybe.db")
 	// If DATABASE_URL starts with file: or sqlite:, strip it for SQLite driver
