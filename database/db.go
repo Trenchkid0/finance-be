@@ -99,6 +99,7 @@ func InitDB(connectionString string) (*gorm.DB, error) {
 		&RecurringBill{},
 		&AssetHolding{},
 		&Notification{},
+		&UserPreference{},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to migrate database: %w", err)

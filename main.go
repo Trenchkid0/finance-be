@@ -145,6 +145,10 @@ func main() {
 	secureRoute("DELETE /api/notifications/{id}", handlers.DeleteNotificationHandler)
 	secureRoute("DELETE /api/notifications", handlers.ClearNotificationsHandler)
 
+	// User Preferences routes (batch endpoint for all UI/UX settings)
+	secureRoute("GET /api/preferences", handlers.PreferencesHandler)
+	secureRoute("PUT /api/preferences", handlers.PreferencesHandler)
+
 	// System Data management routes
 	secureRoute("GET /api/system/backup", handlers.BackupDatabaseHandler)
 	secureRoute("POST /api/system/restore", handlers.RestoreDatabaseHandler)

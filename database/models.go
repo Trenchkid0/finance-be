@@ -198,3 +198,13 @@ type Notification struct {
 	CreatedAt time.Time `json:"createdAt"`
 }
 
+// UserPreference stores per-user UI/UX preferences as a JSON blob.
+// One row per user — keeps all small, rarely-changing settings in a single row.
+type UserPreference struct {
+	ID        string    `gorm:"primaryKey;type:varchar(191)" json:"id"`
+	UserID    string    `gorm:"uniqueIndex;type:varchar(191);not null" json:"userId"`
+	Data      string    `gorm:"type:text" json:"data"` // JSON blob with all prefs
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
