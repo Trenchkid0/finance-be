@@ -412,27 +412,43 @@ func SeedDemoData(db *gorm.DB) error {
 	return nil
 }
 
-// runSQLMigrations reads and executes SQL statements from database/migrations/001_add_performance_indexes.sql
+// runSQLMigrations discovers and executes all *.sql files inside database/migrations/
+// in alphabetical order. New migration files are picked up automatically on startup
+// — no code changes required when adding future migrations.
 func runSQLMigrations(db *gorm.DB) {
-	sqlFile := "database/migrations/001_add_performance_indexes.sql"
-	content, err := os.ReadFile(sqlFile)
+	migrationsDir := "database/migrations"
+
+	entries, err := os.ReadDir(migrationsDir)
 	if err != nil {
-		fmt.Printf("⚠️ Failed to read migration SQL file: %v\n", err)
+		fmt.Printf("⚠️ Failed to read migrations directory: %v\n", err)
 		return
 	}
 
-	// Split by semicolon and run each query
-	queries := strings.Split(string(content), ";")
-	for _, query := range queries {
-		query = strings.TrimSpace(query)
-		if query == "" || strings.HasPrefix(query, "--") {
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
 			continue
 		}
 
-		if err := db.Exec(query).Error; err != nil {
-			// Print warning but don't fail, as some indexes might fail due to dialect syntax or already existing
-			fmt.Printf("⚠️ SQL migration query warning/error: %v\n", err)
+		sqlFile := migrationsDir + "/" + entry.Name()
+		content, err := os.ReadFile(sqlFile)
+		if err != nil {
+			fmt.Printf("⚠️ Failed to read migration file %s: %v\n", entry.Name(), err)
+			continue
 		}
+
+		// Split by semicolon and run each statement
+		queries := strings.Split(string(content), ";")
+		for _, query := range queries {
+			query = strings.TrimSpace(query)
+			if query == "" || strings.HasPrefix(query, "--") {
+				continue
+			}
+
+			if err := db.Exec(query).Error; err != nil {
+				// Non-fatal: indexes or columns may already exist
+				fmt.Printf("⚠️ [%s] migration warning: %v\n", entry.Name(), err)
+			}
+		}
+		fmt.Printf("🚀 Migration applied: %s\n", entry.Name())
 	}
-	fmt.Println("🚀 Automatic SQL migrations completed.")
 }
