@@ -415,6 +415,8 @@ func SeedDemoData(db *gorm.DB) error {
 // runSQLMigrations discovers and executes all *.sql files inside database/migrations/
 // in alphabetical order. New migration files are picked up automatically on startup
 // — no code changes required when adding future migrations.
+// All migration errors are non-fatal (printed as warnings) so that already-applied
+// statements (e.g. column already VARCHAR) don't block startup.
 func runSQLMigrations(db *gorm.DB) {
 	migrationsDir := "database/migrations"
 
@@ -437,15 +439,23 @@ func runSQLMigrations(db *gorm.DB) {
 		}
 
 		// Split by semicolon and run each statement
-		queries := strings.Split(string(content), ";")
-		for _, query := range queries {
-			query = strings.TrimSpace(query)
-			if query == "" || strings.HasPrefix(query, "--") {
+		rawStatements := strings.Split(string(content), ";")
+		for _, raw := range rawStatements {
+			// Strip comment lines (lines starting with --) from the statement
+			var lines []string
+			for _, line := range strings.Split(raw, "\n") {
+				trimmed := strings.TrimSpace(line)
+				if trimmed != "" && !strings.HasPrefix(trimmed, "--") {
+					lines = append(lines, trimmed)
+				}
+			}
+			stmt := strings.TrimSpace(strings.Join(lines, "\n"))
+			if stmt == "" {
 				continue
 			}
 
-			if err := db.Exec(query).Error; err != nil {
-				// Non-fatal: indexes or columns may already exist
+			if err := db.Exec(stmt).Error; err != nil {
+				// Non-fatal: column may already be the right type, index may already exist
 				fmt.Printf("⚠️ [%s] migration warning: %v\n", entry.Name(), err)
 			}
 		}
