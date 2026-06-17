@@ -1,13 +1,23 @@
 package utils
 
 import (
+	"fmt"
 	"net/http"
+	"os"
 )
 
 // HandleDBError logs a database error and returns a 500 response.
-// Use for any database operation failure.
+// In non-production environments, the real error message is included in the response
+// to make debugging easier without needing direct server log access.
 func HandleDBError(w http.ResponseWriter, err error, operation string) {
 	Log.Error().Err(err).Str("operation", operation).Msg("Database operation failed")
+
+	appEnv := os.Getenv("APP_ENV")
+	if appEnv != "production" && appEnv != "prod" {
+		// Show real error in dev/debug to simplify troubleshooting
+		ErrorResponse(w, http.StatusInternalServerError, fmt.Sprintf("[%s] %v", operation, err))
+		return
+	}
 	ErrorResponse(w, http.StatusInternalServerError, "An internal error occurred")
 }
 
