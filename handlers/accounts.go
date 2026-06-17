@@ -102,7 +102,7 @@ func AccountsHandler(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		var req AccountRequest
 		if err := utils.ParseJSON(r, &req); err != nil {
-			utils.HandleBadRequest(w, "Invalid request body")
+			utils.HandleBadRequest(w, "Format data tidak valid, silakan periksa input Anda.")
 			return
 		}
 
@@ -157,14 +157,14 @@ func AccountDetailHandler(w http.ResponseWriter, r *http.Request) {
 	// Path parameter in Go 1.22+
 	accountID := r.PathValue("id")
 	if accountID == "" {
-		utils.HandleBadRequest(w, "Missing account ID")
+		utils.HandleBadRequest(w, "ID akun tidak ditemukan.")
 		return
 	}
 
 	// Find the account and ensure ownership
 	var account database.FinanceAccount
 	if err := database.DB.Where("id = ? AND user_id = ?", accountID, userID).First(&account).Error; err != nil {
-		utils.HandleNotFound(w, "Account")
+		utils.HandleNotFound(w, "Akun")
 		return
 	}
 
@@ -175,7 +175,7 @@ func AccountDetailHandler(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPut:
 		var req AccountRequest
 		if err := utils.ParseJSON(r, &req); err != nil {
-			utils.HandleBadRequest(w, "Invalid request body")
+			utils.HandleBadRequest(w, "Format data tidak valid, silakan periksa input Anda.")
 			return
 		}
 
@@ -258,13 +258,13 @@ func RestoreAccountHandler(w http.ResponseWriter, r *http.Request) {
 
 	accountID := r.PathValue("id")
 	if accountID == "" {
-		utils.HandleBadRequest(w, "Missing account ID")
+		utils.HandleBadRequest(w, "ID akun tidak ditemukan.")
 		return
 	}
 
 	var account database.FinanceAccount
 	if err := database.DB.Unscoped().Where("id = ? AND user_id = ?", accountID, userID).First(&account).Error; err != nil {
-		utils.HandleNotFound(w, "Account")
+		utils.HandleNotFound(w, "Akun")
 		return
 	}
 

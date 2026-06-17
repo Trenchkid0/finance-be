@@ -31,12 +31,20 @@ type CashflowSummary struct {
 	Surplus float64       `json:"surplus"`
 }
 
+type TransactionCounts struct {
+	Income    int `json:"income"`
+	Expense   int `json:"expense"`
+	Transfer  int `json:"transfer"`
+	Total     int `json:"total"`
+}
+
 type DashboardSummaryResponse struct {
 	NetWorthCurrent  float64                `json:"netWorthCurrent"`
 	NetWorthPrevious float64                `json:"netWorthPrevious"`
 	Period           string                 `json:"period"`
 	NetWorthSeries   []NetWorthPoint        `json:"netWorthSeries"`
 	Cashflow         CashflowSummary        `json:"cashflow"`
+	Counts           TransactionCounts      `json:"counts"`
 	Recent           []database.Transaction `json:"recent"`
 }
 
@@ -99,7 +107,10 @@ func SummaryHandler(w http.ResponseWriter, r *http.Request) {
 	// 3. Fetch Cashflow Sankey data
 	cashflow := getCashflow(userID, cashflowPeriod)
 
-	// 4. Fetch Recent Transactions (limit 8)
+	// 4. Fetch transaction counts by type (for the period)
+	counts := getTransactionCounts(userID, cashflowPeriod)
+
+	// 5. Fetch Recent Transactions (limit 8)
 	var recent []database.Transaction
 	database.DB.Model(&database.Transaction{}).
 		Preload("Category").
@@ -116,6 +127,7 @@ func SummaryHandler(w http.ResponseWriter, r *http.Request) {
 		Period:           period,
 		NetWorthSeries:   netWorthSeries,
 		Cashflow:         cashflow,
+		Counts:           counts,
 		Recent:           recent,
 	}
 
@@ -289,4 +301,33 @@ func getCashflow(userID string, period string) CashflowSummary {
 		Outflow: outflow,
 		Surplus: surplus,
 	}
+}
+
+func getTransactionCounts(userID string, period string) TransactionCounts {
+	start, end := periodToRange(period)
+
+	type CountRow struct {
+		Type  string `gorm:"column:type"`
+		Count int    `gorm:"column:count"`
+	}
+	var rows []CountRow
+	database.DB.Table("transactions").
+		Select("type, COUNT(*) as count").
+		Where("user_id = ? AND date >= ? AND date < ?", userID, start, end).
+		Group("type").
+		Scan(&rows)
+
+	counts := TransactionCounts{}
+	for _, r := range rows {
+		switch database.TransactionType(r.Type) {
+		case database.TransactionTypeIncome:
+			counts.Income = r.Count
+		case database.TransactionTypeExpense:
+			counts.Expense = r.Count
+		case database.TransactionTypeTransfer:
+			counts.Transfer = r.Count
+		}
+		counts.Total += r.Count
+	}
+	return counts
 }

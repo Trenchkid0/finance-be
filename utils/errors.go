@@ -1,35 +1,26 @@
 package utils
 
 import (
-	"fmt"
 	"net/http"
-	"os"
 )
 
-// HandleDBError logs a database error and returns a 500 response.
-// In non-production environments, the real error message is included in the response
-// to make debugging easier without needing direct server log access.
+// HandleDBError logs a database error and returns a user-friendly 500 response.
+// The raw error is ALWAYS logged server-side but NEVER exposed to the client.
 func HandleDBError(w http.ResponseWriter, err error, operation string) {
 	Log.Error().Err(err).Str("operation", operation).Msg("Database operation failed")
-
-	appEnv := os.Getenv("APP_ENV")
-	if appEnv != "production" && appEnv != "prod" {
-		// Show real error in dev/debug to simplify troubleshooting
-		ErrorResponse(w, http.StatusInternalServerError, fmt.Sprintf("[%s] %v", operation, err))
-		return
-	}
-	ErrorResponse(w, http.StatusInternalServerError, "An internal error occurred")
+	ErrorResponse(w, http.StatusInternalServerError,
+		"Terjadi kesalahan pada server. Silakan coba lagi dalam beberapa saat.")
 }
 
 // HandleNotFound returns a 404 response for a missing resource.
 func HandleNotFound(w http.ResponseWriter, resource string) {
-	ErrorResponse(w, http.StatusNotFound, resource+" not found")
+	ErrorResponse(w, http.StatusNotFound, resource+" tidak ditemukan.")
 }
 
 // HandleUnauthorized returns a 401 response.
-// An optional message can be provided; defaults to "Unauthorized".
+// An optional message can be provided; defaults to a user-friendly message.
 func HandleUnauthorized(w http.ResponseWriter, message ...string) {
-	msg := "Unauthorized"
+	msg := "Sesi Anda telah berakhir. Silakan login kembali."
 	if len(message) > 0 && message[0] != "" {
 		msg = message[0]
 	}
@@ -38,11 +29,11 @@ func HandleUnauthorized(w http.ResponseWriter, message ...string) {
 
 // HandleValidationError returns a 400 response with validation error details.
 func HandleValidationError(w http.ResponseWriter, errs []string) {
-	msg := "Validation failed"
+	msg := "Data yang dikirim tidak valid."
 	if len(errs) > 0 {
 		msg = errs[0]
 		if len(errs) > 1 {
-			msg += " (+" + itoa(len(errs)-1) + " more)"
+			msg += " (+" + itoa(len(errs)-1) + " lainnya)"
 		}
 	}
 	ErrorResponse(w, http.StatusBadRequest, msg)
@@ -55,7 +46,7 @@ func HandleBadRequest(w http.ResponseWriter, message string) {
 
 // HandleMethodNotAllowed returns a 405 response.
 func HandleMethodNotAllowed(w http.ResponseWriter) {
-	ErrorResponse(w, http.StatusMethodNotAllowed, "Method not allowed")
+	ErrorResponse(w, http.StatusMethodNotAllowed, "Metode tidak diizinkan.")
 }
 
 // itoa converts int to string without importing strconv (avoids circular imports).

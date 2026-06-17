@@ -190,7 +190,7 @@ func TransactionsHandler(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		var req TransactionRequest
 		if err := utils.ParseJSON(r, &req); err != nil {
-			utils.HandleBadRequest(w, "Invalid request body")
+			utils.HandleBadRequest(w, "Format data tidak valid, silakan periksa input Anda.")
 			return
 		}
 
@@ -221,7 +221,7 @@ func TransactionsHandler(w http.ResponseWriter, r *http.Request) {
 			if strings.Contains(err.Error(), "missing") {
 				utils.HandleBadRequest(w, err.Error())
 			} else if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "Record NotFound") {
-				utils.HandleNotFound(w, "Account")
+				utils.HandleNotFound(w, "Akun")
 			} else {
 				utils.HandleDBError(w, err, "adjust balances")
 			}
@@ -281,12 +281,12 @@ func TransactionsHandler(w http.ResponseWriter, r *http.Request) {
 			IDs []string `json:"ids"`
 		}
 		if err := utils.ParseJSON(r, &req); err != nil {
-			utils.HandleBadRequest(w, "Invalid request body")
+			utils.HandleBadRequest(w, "Format data tidak valid, silakan periksa input Anda.")
 			return
 		}
 
 		if len(req.IDs) == 0 {
-			utils.HandleBadRequest(w, "IDs list cannot be empty")
+			utils.HandleBadRequest(w, "Pilih minimal satu transaksi.")
 			return
 		}
 
@@ -302,7 +302,7 @@ func TransactionsHandler(w http.ResponseWriter, r *http.Request) {
 
 		if len(transactions) == 0 {
 			tx.Rollback()
-			utils.HandleNotFound(w, "Matching transactions")
+			utils.HandleNotFound(w, "Transaksi")
 			return
 		}
 
@@ -354,12 +354,12 @@ func BulkRestoreTransactionsHandler(w http.ResponseWriter, r *http.Request) {
 		IDs []string `json:"ids"`
 	}
 	if err := utils.ParseJSON(r, &req); err != nil {
-		utils.HandleBadRequest(w, "Invalid request body")
+		utils.HandleBadRequest(w, "Format data tidak valid, silakan periksa input Anda.")
 		return
 	}
 
 	if len(req.IDs) == 0 {
-		utils.HandleBadRequest(w, "IDs list cannot be empty")
+		utils.HandleBadRequest(w, "Pilih minimal satu transaksi.")
 		return
 	}
 
@@ -374,7 +374,7 @@ func BulkRestoreTransactionsHandler(w http.ResponseWriter, r *http.Request) {
 
 	if len(transactions) == 0 {
 		tx.Rollback()
-		utils.HandleNotFound(w, "Matching transactions")
+		utils.HandleNotFound(w, "Transaksi")
 		return
 	}
 
@@ -426,17 +426,17 @@ func BulkEditTransactionsHandler(w http.ResponseWriter, r *http.Request) {
 		CategoryID *string  `json:"categoryId"`
 	}
 	if err := utils.ParseJSON(r, &req); err != nil {
-		utils.HandleBadRequest(w, "Invalid request body")
+		utils.HandleBadRequest(w, "Format data tidak valid, silakan periksa input Anda.")
 		return
 	}
 
 	if len(req.IDs) == 0 {
-		utils.HandleBadRequest(w, "IDs list cannot be empty")
+		utils.HandleBadRequest(w, "Pilih minimal satu transaksi.")
 		return
 	}
 
 	if req.AccountID == "" && req.CategoryID == nil {
-		utils.HandleBadRequest(w, "Must specify accountId and/or categoryId to edit")
+		utils.HandleBadRequest(w, "Pilih akun dan/atau kategori untuk mengedit.")
 		return
 	}
 
@@ -451,7 +451,7 @@ func BulkEditTransactionsHandler(w http.ResponseWriter, r *http.Request) {
 
 	if len(transactions) == 0 {
 		tx.Rollback()
-		utils.HandleNotFound(w, "Matching transactions")
+		utils.HandleNotFound(w, "Transaksi")
 		return
 	}
 

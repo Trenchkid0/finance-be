@@ -24,7 +24,7 @@ func AdjustBalances(tx *gorm.DB, userID string, accountID string, transferToID *
 		return tx.Save(&sourceAcc).Error
 	case database.TransactionTypeTransfer:
 		if transferToID == nil || *transferToID == "" {
-			return fmt.Errorf("transfer target account is missing")
+			return fmt.Errorf("Akun tujuan transfer belum dipilih.")
 		}
 		var destAcc database.FinanceAccount
 		if err := tx.Where("id = ? AND user_id = ?", *transferToID, userID).First(&destAcc).Error; err != nil {

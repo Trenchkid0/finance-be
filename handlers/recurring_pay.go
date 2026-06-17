@@ -26,18 +26,18 @@ func RecurringPayHandler(w http.ResponseWriter, r *http.Request) {
 
 	billID := r.PathValue("id")
 	if billID == "" {
-		utils.HandleBadRequest(w, "Missing bill ID")
+		utils.HandleBadRequest(w, "ID tagihan tidak ditemukan.")
 		return
 	}
 
 	var bill database.RecurringBill
 	if err := database.DB.Where("id = ? AND user_id = ?", billID, userID).First(&bill).Error; err != nil {
-		utils.HandleNotFound(w, "Recurring bill")
+		utils.HandleNotFound(w, "Tagihan berulang")
 		return
 	}
 
 	if bill.AccountID == nil || *bill.AccountID == "" {
-		utils.HandleBadRequest(w, "This bill is not linked to a payment account")
+		utils.HandleBadRequest(w, "Tagihan ini tidak terhubung dengan akun pembayaran.")
 		return
 	}
 

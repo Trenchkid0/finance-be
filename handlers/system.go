@@ -63,13 +63,13 @@ func RestoreDatabaseHandler(w http.ResponseWriter, r *http.Request) {
 	// 1. Get uploaded file
 	err := r.ParseMultipartForm(10 << 20) // 10MB limit
 	if err != nil {
-		utils.HandleBadRequest(w, "Failed to parse multipart form")
+		utils.HandleBadRequest(w, "Gagal memproses file yang diunggah.")
 		return
 	}
 
 	uploadedFile, _, err := r.FormFile("file")
 	if err != nil {
-		utils.HandleBadRequest(w, "Missing 'file' field in upload")
+		utils.HandleBadRequest(w, "File belum dipilih.")
 		return
 	}
 	defer uploadedFile.Close()

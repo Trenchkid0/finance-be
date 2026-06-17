@@ -27,7 +27,7 @@ func TestTelegramHandler(w http.ResponseWriter, r *http.Request) {
 
 	var user database.User
 	if err := database.DB.Where("id = ?", userID).First(&user).Error; err != nil {
-		utils.HandleNotFound(w, "User")
+		utils.HandleNotFound(w, "Pengguna")
 		return
 	}
 

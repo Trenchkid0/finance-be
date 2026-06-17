@@ -105,7 +105,7 @@ func BudgetDetailHandler(w http.ResponseWriter, r *http.Request) {
 
 	var budget database.Budget
 	if err := database.DB.Where("id = ? AND user_id = ?", budgetID, userID).First(&budget).Error; err != nil {
-		utils.HandleNotFound(w, "Budget limit")
+		utils.HandleNotFound(w, "Batas anggaran")
 		return
 	}
 

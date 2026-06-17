@@ -79,7 +79,7 @@ func DeleteNotificationHandler(w http.ResponseWriter, r *http.Request) {
 
 	id := r.PathValue("id")
 	if id == "" {
-		utils.HandleBadRequest(w, "Missing notification ID")
+		utils.HandleBadRequest(w, "ID notifikasi tidak ditemukan.")
 		return
 	}
 

@@ -50,7 +50,7 @@ func BuyAssetHandler(w http.ResponseWriter, r *http.Request) {
 		var deductAcc database.FinanceAccount
 		if err := tx.Where("id = ? AND user_id = ?", *req.DeductFromAccountID, userID).First(&deductAcc).Error; err != nil {
 			tx.Rollback()
-			utils.HandleNotFound(w, "Deduct account")
+			utils.HandleNotFound(w, "Akun pemotong")
 			return
 		}
 
@@ -169,7 +169,7 @@ func SellAssetHandler(w http.ResponseWriter, r *http.Request) {
 	var holding database.AssetHolding
 	if err := tx.Where("id = ? AND user_id = ?", req.HoldingID, userID).First(&holding).Error; err != nil {
 		tx.Rollback()
-		utils.HandleNotFound(w, "Holding")
+		utils.HandleNotFound(w, "Kepemilikan investasi")
 		return
 	}
 
@@ -187,7 +187,7 @@ func SellAssetHandler(w http.ResponseWriter, r *http.Request) {
 		var receiveAcc database.FinanceAccount
 		if err := tx.Where("id = ? AND user_id = ?", *req.AddToAccountID, userID).First(&receiveAcc).Error; err != nil {
 			tx.Rollback()
-			utils.HandleNotFound(w, "Receive account")
+			utils.HandleNotFound(w, "Akun penerima")
 			return
 		}
 
@@ -282,7 +282,7 @@ func UpdatePriceHandler(w http.ResponseWriter, r *http.Request) {
 
 	var holding database.AssetHolding
 	if err := database.DB.Where("id = ? AND user_id = ?", req.HoldingID, userID).First(&holding).Error; err != nil {
-		utils.HandleNotFound(w, "Holding")
+		utils.HandleNotFound(w, "Kepemilikan investasi")
 		return
 	}
 

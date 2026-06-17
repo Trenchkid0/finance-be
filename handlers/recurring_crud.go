@@ -45,7 +45,7 @@ func RecurringHandler(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		var req RecurringBillRequest
 		if err := utils.ParseJSON(r, &req); err != nil {
-			utils.HandleBadRequest(w, "Invalid request body")
+			utils.HandleBadRequest(w, "Format data tidak valid, silakan periksa input Anda.")
 			return
 		}
 
@@ -111,13 +111,13 @@ func RecurringDetailHandler(w http.ResponseWriter, r *http.Request) {
 
 	billID := r.PathValue("id")
 	if billID == "" {
-		utils.HandleBadRequest(w, "Missing bill ID")
+		utils.HandleBadRequest(w, "ID tagihan tidak ditemukan.")
 		return
 	}
 
 	var bill database.RecurringBill
 	if err := database.DB.Where("id = ? AND user_id = ?", billID, userID).First(&bill).Error; err != nil {
-		utils.HandleNotFound(w, "Recurring bill")
+		utils.HandleNotFound(w, "Tagihan berulang")
 		return
 	}
 
@@ -125,7 +125,7 @@ func RecurringDetailHandler(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPut:
 		var req RecurringBillRequest
 		if err := utils.ParseJSON(r, &req); err != nil {
-			utils.HandleBadRequest(w, "Invalid request body")
+			utils.HandleBadRequest(w, "Format data tidak valid, silakan periksa input Anda.")
 			return
 		}
 

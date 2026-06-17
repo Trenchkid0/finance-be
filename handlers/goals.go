@@ -103,7 +103,7 @@ func GoalDetailHandler(w http.ResponseWriter, r *http.Request) {
 
 	var goal database.SavingsGoal
 	if err := database.DB.Where("id = ? AND user_id = ?", goalID, userID).First(&goal).Error; err != nil {
-		utils.HandleNotFound(w, "Savings goal")
+		utils.HandleNotFound(w, "Target tabungan")
 		return
 	}
 

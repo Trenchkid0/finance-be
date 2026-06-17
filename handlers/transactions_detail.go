@@ -21,13 +21,13 @@ func TransactionDetailHandler(w http.ResponseWriter, r *http.Request) {
 
 	txID := r.PathValue("id")
 	if txID == "" {
-		utils.HandleBadRequest(w, "Missing transaction ID")
+		utils.HandleBadRequest(w, "ID transaksi tidak ditemukan.")
 		return
 	}
 
 	var transaction database.Transaction
 	if err := database.DB.Where("id = ? AND user_id = ?", txID, userID).First(&transaction).Error; err != nil {
-		utils.HandleNotFound(w, "Transaction")
+		utils.HandleNotFound(w, "Transaksi")
 		return
 	}
 
@@ -35,7 +35,7 @@ func TransactionDetailHandler(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPut:
 		var req TransactionRequest
 		if err := utils.ParseJSON(r, &req); err != nil {
-			utils.HandleBadRequest(w, "Invalid request body")
+			utils.HandleBadRequest(w, "Format data tidak valid, silakan periksa input Anda.")
 			return
 		}
 
@@ -180,13 +180,13 @@ func RestoreTransactionHandler(w http.ResponseWriter, r *http.Request) {
 
 	txID := r.PathValue("id")
 	if txID == "" {
-		utils.HandleBadRequest(w, "Missing transaction ID")
+		utils.HandleBadRequest(w, "ID transaksi tidak ditemukan.")
 		return
 	}
 
 	var transaction database.Transaction
 	if err := database.DB.Unscoped().Where("id = ? AND user_id = ?", txID, userID).First(&transaction).Error; err != nil {
-		utils.HandleNotFound(w, "Transaction")
+		utils.HandleNotFound(w, "Transaksi")
 		return
 	}
 

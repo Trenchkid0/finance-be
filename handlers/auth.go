@@ -37,7 +37,7 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 
 	var req RegisterRequest
 	if err := utils.ParseJSON(r, &req); err != nil {
-		utils.HandleBadRequest(w, "Invalid request body")
+		utils.HandleBadRequest(w, "Format data tidak valid, silakan periksa input Anda.")
 		return
 	}
 
@@ -140,7 +140,7 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 
 	var req LoginRequest
 	if err := utils.ParseJSON(r, &req); err != nil {
-		utils.HandleBadRequest(w, "Invalid request body")
+		utils.HandleBadRequest(w, "Format data tidak valid, silakan periksa input Anda.")
 		return
 	}
 
@@ -223,7 +223,7 @@ func MeHandler(w http.ResponseWriter, r *http.Request) {
 
 	var user database.User
 	if err := database.DB.Where("id = ?", userID).First(&user).Error; err != nil {
-		utils.HandleNotFound(w, "User")
+		utils.HandleNotFound(w, "Pengguna")
 		return
 	}
 
@@ -241,7 +241,7 @@ func MeHandler(w http.ResponseWriter, r *http.Request) {
 			TelegramChatID string `json:"telegramChatId"`
 		}
 		if err := utils.ParseJSON(r, &req); err != nil {
-			utils.HandleBadRequest(w, "Invalid request body")
+			utils.HandleBadRequest(w, "Format data tidak valid, silakan periksa input Anda.")
 			return
 		}
 
@@ -276,7 +276,7 @@ func ForgotPasswordHandler(w http.ResponseWriter, r *http.Request) {
 
 	var req ForgotPasswordRequest
 	if err := utils.ParseJSON(r, &req); err != nil {
-		utils.HandleBadRequest(w, "Invalid request body")
+		utils.HandleBadRequest(w, "Format data tidak valid, silakan periksa input Anda.")
 		return
 	}
 
@@ -327,7 +327,7 @@ func ResetPasswordHandler(w http.ResponseWriter, r *http.Request) {
 
 	var req ResetPasswordRequest
 	if err := utils.ParseJSON(r, &req); err != nil {
-		utils.HandleBadRequest(w, "Invalid request body")
+		utils.HandleBadRequest(w, "Format data tidak valid, silakan periksa input Anda.")
 		return
 	}
 
