@@ -200,13 +200,17 @@ func LogoutHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Match the same Secure flag logic used in Login/Register
+	appEnv := strings.ToLower(os.Getenv("APP_ENV"))
+	isSecure := appEnv == "production" || appEnv == "prod"
+
 	http.SetCookie(w, &http.Cookie{
 		Name:     "auth_token",
 		Value:    "",
 		MaxAge:   -1,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   false,
+		Secure:   isSecure,
 		SameSite: http.SameSiteLaxMode,
 	})
 
@@ -234,6 +238,7 @@ func MeHandler(w http.ResponseWriter, r *http.Request) {
 			"name":           user.Name,
 			"email":          user.Email,
 			"telegramChatId": user.TelegramChatID,
+			"createdAt":      user.CreatedAt.Format(time.RFC3339),
 		})
 
 	case http.MethodPut:

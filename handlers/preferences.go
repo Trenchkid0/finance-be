@@ -22,6 +22,7 @@ type PreferencesData struct {
 	TypographyStyles     map[string]interface{} `json:"typographyStyles"`
 	NotificationSettings map[string]interface{} `json:"notificationSettings"`
 	Language             string                 `json:"language"`
+	DashboardLayout      string                 `json:"dashboardLayout"`
 }
 
 // defaultPreferences returns the default preferences for new users.
@@ -55,6 +56,7 @@ func defaultPreferences() PreferencesData {
 			"expand":   false,
 		},
 		Language: "id",
+		DashboardLayout: "default",
 	}
 }
 

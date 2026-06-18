@@ -17,11 +17,11 @@ func AdjustBalances(tx *gorm.DB, userID string, accountID string, transferToID *
 
 	switch txType {
 	case database.TransactionTypeIncome:
-		sourceAcc.Balance = utils.RoundToTwoDecimals(sourceAcc.Balance + ((amount - adminFee) * multiplier))
-		return tx.Save(&sourceAcc).Error
+		newBalance := utils.RoundToTwoDecimals(sourceAcc.Balance + ((amount - adminFee) * multiplier))
+		return tx.Model(&sourceAcc).Update("balance", newBalance).Error
 	case database.TransactionTypeExpense:
-		sourceAcc.Balance = utils.RoundToTwoDecimals(sourceAcc.Balance - ((amount + adminFee) * multiplier))
-		return tx.Save(&sourceAcc).Error
+		newBalance := utils.RoundToTwoDecimals(sourceAcc.Balance - ((amount + adminFee) * multiplier))
+		return tx.Model(&sourceAcc).Update("balance", newBalance).Error
 	case database.TransactionTypeTransfer:
 		if transferToID == nil || *transferToID == "" {
 			return fmt.Errorf("Akun tujuan transfer belum dipilih.")
@@ -30,12 +30,12 @@ func AdjustBalances(tx *gorm.DB, userID string, accountID string, transferToID *
 		if err := tx.Where("id = ? AND user_id = ?", *transferToID, userID).First(&destAcc).Error; err != nil {
 			return err
 		}
-		sourceAcc.Balance = utils.RoundToTwoDecimals(sourceAcc.Balance - ((amount + adminFee) * multiplier))
-		destAcc.Balance = utils.RoundToTwoDecimals(destAcc.Balance + (amount * multiplier))
-		if err := tx.Save(&sourceAcc).Error; err != nil {
+		newSrcBal := utils.RoundToTwoDecimals(sourceAcc.Balance - ((amount + adminFee) * multiplier))
+		newDstBal := utils.RoundToTwoDecimals(destAcc.Balance + (amount * multiplier))
+		if err := tx.Model(&sourceAcc).Update("balance", newSrcBal).Error; err != nil {
 			return err
 		}
-		return tx.Save(&destAcc).Error
+		return tx.Model(&destAcc).Update("balance", newDstBal).Error
 	}
 
 	return nil

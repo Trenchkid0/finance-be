@@ -44,7 +44,7 @@ func BudgetsHandler(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		var req BudgetRequest
 		if err := utils.ParseJSON(r, &req); err != nil {
-			utils.HandleBadRequest(w, "Invalid request body")
+			utils.HandleBadRequest(w, "Format data tidak valid, silakan periksa input Anda.")
 			return
 		}
 

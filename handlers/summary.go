@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"fmt"
 	"math"
 	"net/http"
 	"sort"
@@ -76,13 +75,11 @@ func SummaryHandler(w http.ResponseWriter, r *http.Request) {
 	
 	if err := utils.CacheGet(cacheKey, &cachedResponse); err == nil {
 		// Cache HIT - return immediately
-		fmt.Printf("💾 Cache HIT: %s\n", cacheKey)
 		utils.JSONResponse(w, http.StatusOK, cachedResponse)
 		return
 	}
 	
 	// Cache MISS - fetch from database
-	fmt.Printf("❌ Cache MISS: %s - fetching from DB\n", cacheKey)
 
 	// 1. Fetch active accounts
 	var accounts []database.FinanceAccount
@@ -133,7 +130,6 @@ func SummaryHandler(w http.ResponseWriter, r *http.Request) {
 
 	// ✅ Store in cache for 3 minutes
 	_ = utils.CacheSet(cacheKey, response, 3*time.Minute)
-	fmt.Printf("📦 Cached: %s (3 min TTL)\n", cacheKey)
 
 	utils.JSONResponse(w, http.StatusOK, response)
 }
