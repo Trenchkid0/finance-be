@@ -237,29 +237,42 @@ func MeHandler(w http.ResponseWriter, r *http.Request) {
 			"id":             user.ID,
 			"name":           user.Name,
 			"email":          user.Email,
+			"image":          user.Image,
 			"telegramChatId": user.TelegramChatID,
 			"createdAt":      user.CreatedAt.Format(time.RFC3339),
 		})
 
 	case http.MethodPut:
 		var req struct {
+			Name           string `json:"name"`
 			TelegramChatID string `json:"telegramChatId"`
+			Image          string `json:"image"`
 		}
 		if err := utils.ParseJSON(r, &req); err != nil {
 			utils.HandleBadRequest(w, "Format data tidak valid, silakan periksa input Anda.")
 			return
 		}
 
+		if req.Name != "" {
+			user.Name = req.Name
+		}
 		user.TelegramChatID = req.TelegramChatID
+		user.Image = req.Image
+		user.UpdatedAt = time.Now()
+
 		if err := database.DB.Save(&user).Error; err != nil {
 			utils.HandleDBError(w, err, "update user profile")
 			return
 		}
 
+		// Invalidate cache
+		_ = utils.CacheInvalidateUser(user.ID)
+
 		utils.JSONResponse(w, http.StatusOK, map[string]interface{}{
 			"id":             user.ID,
 			"name":           user.Name,
 			"email":          user.Email,
+			"image":          user.Image,
 			"telegramChatId": user.TelegramChatID,
 		})
 

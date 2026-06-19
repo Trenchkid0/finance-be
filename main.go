@@ -126,6 +126,7 @@ func main() {
 
 	// Upload endpoint
 	secureRoute("POST /api/upload/receipt", handlers.UploadReceiptHandler)
+	secureRoute("POST /api/upload/avatar", handlers.UploadAvatarHandler)
 
 	// Investment Portfolio endpoints
 	secureRoute("GET /api/investments", handlers.InvestmentsHandler)
