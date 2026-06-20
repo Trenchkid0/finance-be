@@ -76,16 +76,8 @@ func UploadAvatarHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Return URL (dynamically built from request host/scheme)
-	scheme := "http"
-	if r.TLS != nil {
-		scheme = "https"
-	}
-	if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
-		scheme = proto
-	}
-	baseURL := fmt.Sprintf("%s://%s", scheme, r.Host)
-	imageURL := fmt.Sprintf("%s/uploads/avatars/%s", baseURL, filename)
+	// Return relative path so it works from any host (localhost, LAN IP, domain, etc.)
+	imageURL := fmt.Sprintf("/uploads/avatars/%s", filename)
 
 	utils.JSONResponse(w, http.StatusOK, map[string]interface{}{
 		"url":      imageURL,

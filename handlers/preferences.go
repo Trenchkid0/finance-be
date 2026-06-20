@@ -37,6 +37,7 @@ func defaultPreferences() PreferencesData {
 			"blur":           "12px",
 			"opacity":        "0.75",
 			"dropdownRadius": "9999px",
+			"cardType":       "default",
 		},
 		ButtonStyles: map[string]interface{}{
 			"radius": "12px",

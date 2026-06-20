@@ -205,13 +205,8 @@ func downloadAndConvertTelegramPhoto(fileID, userID string) (string, error) {
 		return "", err
 	}
 
-	// Step 5: Return the URL
-	baseURL := os.Getenv("BASE_URL")
-	if baseURL == "" {
-		baseURL = "http://localhost:8080"
-	}
-
-	imageURL := fmt.Sprintf("%s/uploads/receipts/%s", baseURL, filename)
+	// Step 5: Return relative path so it works from any host
+	imageURL := fmt.Sprintf("/uploads/receipts/%s", filename)
 	return imageURL, nil
 }
 
