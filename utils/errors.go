@@ -2,6 +2,7 @@ package utils
 
 import (
 	"net/http"
+	"strconv"
 )
 
 // HandleDBError logs a database error and returns a user-friendly 500 response.
@@ -33,7 +34,7 @@ func HandleValidationError(w http.ResponseWriter, errs []string) {
 	if len(errs) > 0 {
 		msg = errs[0]
 		if len(errs) > 1 {
-			msg += " (+" + itoa(len(errs)-1) + " lainnya)"
+			msg += " (+" + strconv.Itoa(len(errs)-1) + " lainnya)"
 		}
 	}
 	ErrorResponse(w, http.StatusBadRequest, msg)
@@ -49,23 +50,4 @@ func HandleMethodNotAllowed(w http.ResponseWriter) {
 	ErrorResponse(w, http.StatusMethodNotAllowed, "Metode tidak diizinkan.")
 }
 
-// itoa converts int to string without importing strconv (avoids circular imports).
-func itoa(i int) string {
-	if i == 0 {
-		return "0"
-	}
-	s := ""
-	neg := false
-	if i < 0 {
-		neg = true
-		i = -i
-	}
-	for i > 0 {
-		s = string(rune('0'+i%10)) + s
-		i /= 10
-	}
-	if neg {
-		s = "-" + s
-	}
-	return s
-}
+

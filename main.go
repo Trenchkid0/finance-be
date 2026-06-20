@@ -173,6 +173,9 @@ func main() {
 	// ✅ PERF: Gzip compression — reduces JSON payload size 60–80%
 	handler = gzipMiddleware(handler)
 
+	// ✅ PERF: ETag support — returns 304 Not Modified for unchanged responses
+	handler = middleware.ETagMiddleware(handler)
+
 	// ✅ PERF: Request timeout — prevents slow queries from holding connections forever
 	handler = http.TimeoutHandler(handler, 30*time.Second, `{"error":"request timeout"}`)
 
