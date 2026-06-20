@@ -1,10 +1,13 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"os"
+	"runtime"
+	"time"
 
 	"maybe-finance-backend/database"
 	"maybe-finance-backend/middleware"
@@ -152,4 +155,94 @@ func ExportAllDataHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Disposition", "attachment; filename=maybe_finance_export.json")
 	_ = json.NewEncoder(w).Encode(exportData)
+}
+
+// SystemHealthHandler provides real-time health metrics of Racks Finance
+func SystemHealthHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		utils.HandleMethodNotAllowed(w)
+		return
+	}
+
+	// 1. Check Database Status & Latency
+	dbStart := time.Now()
+	dbStatus := "UP"
+	var dbLatencyMs float64
+	if database.DB == nil {
+		dbStatus = "DOWN"
+	} else {
+		sqlDB, err := database.DB.DB()
+		if err != nil {
+			dbStatus = "DOWN"
+		} else {
+			if err := sqlDB.Ping(); err != nil {
+				dbStatus = "DOWN"
+			} else {
+				dbLatencyMs = float64(time.Since(dbStart).Nanoseconds()) / 1e6
+			}
+		}
+	}
+
+	// 2. Check Redis Cache Status & Latency
+	redisStart := time.Now()
+	redisStatus := "UP"
+	var redisLatencyMs float64
+	if utils.RedisClient == nil {
+		redisStatus = "DOWN"
+	} else {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if _, err := utils.RedisClient.Ping(ctx).Result(); err != nil {
+			redisStatus = "DOWN"
+		} else {
+			redisLatencyMs = float64(time.Since(redisStart).Nanoseconds()) / 1e6
+		}
+	}
+
+	// 3. Get Schedulers Metrics
+	autoPayMetrics, reminderMetrics, startTime := utils.Metrics.GetMetrics()
+
+	// 4. Get System Resource Usage
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+
+	uptimeSeconds := time.Since(startTime).Seconds()
+
+	healthData := map[string]interface{}{
+		"status": "UP",
+		"timestamp": time.Now().Format(time.RFC3339),
+		"uptime": map[string]interface{}{
+			"seconds": uptimeSeconds,
+			"human":   time.Since(startTime).Round(time.Second).String(),
+		},
+		"components": map[string]interface{}{
+			"database": map[string]interface{}{
+				"status":    dbStatus,
+				"latencyMs": dbLatencyMs,
+			},
+			"cache": map[string]interface{}{
+				"status":    redisStatus,
+				"latencyMs": redisLatencyMs,
+			},
+		},
+		"schedulers": map[string]interface{}{
+			"autoPay":      autoPayMetrics,
+			"billReminder": reminderMetrics,
+		},
+		"resources": map[string]interface{}{
+			"goroutines":    runtime.NumGoroutine(),
+			"memAllocMb":    float64(m.Alloc) / (1024 * 1024),
+			"memTotalAlloc": float64(m.TotalAlloc) / (1024 * 1024),
+			"memSysMb":      float64(m.Sys) / (1024 * 1024),
+		},
+	}
+
+	// Overall status degradation check
+	if dbStatus == "DOWN" {
+		healthData["status"] = "DOWN"
+	} else if redisStatus == "DOWN" || autoPayMetrics.LastStatus == "failed" || reminderMetrics.LastStatus == "failed" {
+		healthData["status"] = "DEGRADED"
+	}
+
+	utils.JSONResponse(w, http.StatusOK, healthData)
 }

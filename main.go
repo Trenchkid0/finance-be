@@ -73,6 +73,7 @@ func main() {
 	mux.HandleFunc("POST /api/auth/logout", handlers.LogoutHandler)
 	mux.HandleFunc("POST /api/auth/forgot-password", handlers.ForgotPasswordHandler)
 	mux.HandleFunc("POST /api/auth/reset-password", handlers.ResetPasswordHandler)
+	mux.HandleFunc("GET /api/system/health", handlers.SystemHealthHandler)
 
 	// Secured Routes Wrapper
 	secureRoute := func(pattern string, handler http.HandlerFunc) {
@@ -415,8 +416,10 @@ func startAutoPayScheduler(ctx context.Context) {
 }
 
 func checkAutoPayBills() {
+	utils.Metrics.RecordAutoPayStart()
 	db := database.DB
 	if db == nil {
+		utils.Metrics.RecordAutoPayFailure("database is not initialized")
 		return
 	}
 
@@ -424,6 +427,7 @@ func checkAutoPayBills() {
 	err := db.Where("auto_pay = ? AND account_id IS NOT NULL AND account_id != ''", true).Find(&bills).Error
 	if err != nil {
 		utils.Log.Error().Err(err).Msg("[AutoPay] Failed to fetch auto-pay bills")
+		utils.Metrics.RecordAutoPayFailure(err.Error())
 		return
 	}
 
@@ -514,6 +518,8 @@ func checkAutoPayBills() {
 		_ = handlers.CreateNotificationHelper(bill.UserID, "Auto-Pay Success: "+bill.Name, fmt.Sprintf("Successfully auto-paid '%s'. Amount: Rp %s.", bill.Name, utils.FormatRupiah(bill.Amount)), "auto_pay")
 		utils.Log.Info().Str("bill", bill.Name).Float64("amount", bill.Amount).Str("user_id", bill.UserID).Msg("[AutoPay] Successfully paid bill")
 	}
+
+	utils.Metrics.RecordAutoPaySuccess()
 }
 
 func startReminderScheduler(ctx context.Context) {

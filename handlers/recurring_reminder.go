@@ -10,8 +10,10 @@ import (
 
 // CheckReminderBills checks all recurring bills and sends Telegram reminders if due
 func CheckReminderBills() {
+	utils.Metrics.RecordReminderStart()
 	db := database.DB
 	if db == nil {
+		utils.Metrics.RecordReminderFailure("database is not initialized")
 		return
 	}
 
@@ -20,6 +22,7 @@ func CheckReminderBills() {
 	err := db.Where("reminder_days_before IS NOT NULL").Find(&bills).Error
 	if err != nil {
 		utils.Log.Error().Err(err).Msg("[Reminder] Failed to fetch reminder bills")
+		utils.Metrics.RecordReminderFailure(err.Error())
 		return
 	}
 
@@ -129,6 +132,8 @@ func CheckReminderBills() {
 			utils.Log.Debug().Str("bill", bill.Name).Bool("time_passed", timePassed).Bool("already_reminded", alreadyReminded).Msg("[Reminder] Skip bill: conditions not met")
 		}
 	}
+
+	utils.Metrics.RecordReminderSuccess()
 }
 
 func getNextDueDate(bill database.RecurringBill, from time.Time) time.Time {

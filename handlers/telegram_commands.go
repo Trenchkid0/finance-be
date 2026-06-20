@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"maybe-finance-backend/database"
+	"maybe-finance-backend/services"
 	"maybe-finance-backend/utils"
 )
 
@@ -37,8 +38,7 @@ func handlePhotoUpload(msg *TelegramMessage, user *database.User) {
 	tx := database.DB.Begin()
 
 	// Reconcile Balance (Telegram bot is expense by default)
-	account.Balance -= amount
-	if err := tx.Save(&account).Error; err != nil {
+	if err := services.AdjustBalances(tx, user.ID, account.ID, nil, database.TransactionTypeExpense, amount, 0, 1); err != nil {
 		tx.Rollback()
 		sendTelegramMessage(chatID, "❌ Gagal memperbarui saldo akun.")
 		return
@@ -63,7 +63,11 @@ func handlePhotoUpload(msg *TelegramMessage, user *database.User) {
 		return
 	}
 
-	tx.Commit()
+	if err := tx.Commit().Error; err != nil {
+		tx.Rollback()
+		sendTelegramMessage(chatID, "❌ Gagal menyimpan transaksi.")
+		return
+	}
 
 	// Invalidate related caches
 	_ = utils.CacheInvalidateUser(user.ID)
@@ -96,8 +100,7 @@ func handleTextTransaction(msg *TelegramMessage, user *database.User) {
 	tx := database.DB.Begin()
 
 	// Reconcile Balance (Telegram bot is expense by default)
-	account.Balance -= amount
-	if err := tx.Save(&account).Error; err != nil {
+	if err := services.AdjustBalances(tx, user.ID, account.ID, nil, database.TransactionTypeExpense, amount, 0, 1); err != nil {
 		tx.Rollback()
 		sendTelegramMessage(chatID, "❌ Gagal memperbarui saldo akun.")
 		return
@@ -120,7 +123,11 @@ func handleTextTransaction(msg *TelegramMessage, user *database.User) {
 		return
 	}
 
-	tx.Commit()
+	if err := tx.Commit().Error; err != nil {
+		tx.Rollback()
+		sendTelegramMessage(chatID, "❌ Gagal menyimpan transaksi.")
+		return
+	}
 
 	// Invalidate related caches
 	_ = utils.CacheInvalidateUser(user.ID)
