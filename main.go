@@ -90,11 +90,14 @@ func main() {
 
 	secureRoute("GET /api/categories", handlers.CategoriesHandler)
 	secureRoute("POST /api/categories", handlers.CategoriesHandler)
+	secureRoute("PUT /api/categories/{id}", handlers.CategoryDetailHandler)
+	secureRoute("DELETE /api/categories/{id}", handlers.CategoryDetailHandler)
 
 	secureRoute("GET /api/transactions", handlers.TransactionsHandler)
 	secureRoute("POST /api/transactions", handlers.TransactionsHandler)
 	secureRoute("DELETE /api/transactions", handlers.TransactionsHandler)
 	secureRoute("GET /api/transactions/export", handlers.ExportTransactionsHandler)
+	secureRoute("GET /api/transactions/export/tax", handlers.ExportTaxTransactionsHandler)
 	secureRoute("POST /api/transactions/import", handlers.ImportTransactionsHandler)
 	secureRoute("GET /api/transactions/{id}", handlers.TransactionDetailHandler)
 	secureRoute("PUT /api/transactions/{id}", handlers.TransactionDetailHandler)
@@ -109,9 +112,11 @@ func main() {
 	secureRoute("DELETE /api/api-keys/{id}", handlers.ApiKeyDetailHandler)
 
 	secureRoute("GET /api/summary", handlers.SummaryHandler)
+	secureRoute("GET /api/reports", handlers.ReportsHandler)
 	secureRoute("POST /api/ai/scan", handlers.AIScanHandler)
 	secureRoute("GET /api/ai/status", handlers.AIStatusHandler)
 	secureRoute("GET /api/ai/insights", handlers.InsightsHandler)
+
 
 	secureRoute("GET /api/goals", handlers.GoalsHandler)
 	secureRoute("POST /api/goals", handlers.GoalsHandler)

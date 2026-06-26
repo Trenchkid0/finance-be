@@ -44,6 +44,7 @@ type TransactionRequest struct {
 	Date            string                   `json:"date"` // ISO string e.g. "2026-06-05T00:00:00Z"
 	TransferToID    *string                  `json:"transferToId"`
 	ReceiptImageURL *string                  `json:"receiptImageUrl"` // URL foto struk
+	TaxDeductible   bool                     `json:"taxDeductible"`
 }
 
 type TransactionsListResponse struct {
@@ -251,6 +252,7 @@ func TransactionsHandler(w http.ResponseWriter, r *http.Request) {
 			Date:            parsedDate,
 			TransferToID:    req.TransferToID,
 			ReceiptImageURL: receiptURL,
+			TaxDeductible:   req.TaxDeductible,
 			CreatedAt:       time.Now(),
 			UpdatedAt:       time.Now(),
 		}

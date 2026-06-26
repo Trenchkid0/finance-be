@@ -111,6 +111,7 @@ func TransactionDetailHandler(w http.ResponseWriter, r *http.Request) {
 			}
 			transaction.ReceiptImageURL = receiptURL
 		}
+		transaction.TaxDeductible = req.TaxDeductible
 		transaction.UpdatedAt = time.Now()
 
 		if err := tx.Save(&transaction).Error; err != nil {

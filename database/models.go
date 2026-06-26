@@ -69,14 +69,15 @@ type FinanceAccount struct {
 
 // Category represents transaction categories.
 type Category struct {
-	ID        string       `gorm:"primaryKey;type:varchar(191)" json:"id"`
-	UserID    *string      `gorm:"index;type:varchar(191)" json:"userId"` // Nullable for global defaults
-	Name      string       `gorm:"type:varchar(191);not null" json:"name"`
-	Type      CategoryType `gorm:"type:varchar(50);not null" json:"type"`
-	Icon      string       `gorm:"type:varchar(100)" json:"icon"`
-	Color     string       `gorm:"type:varchar(50)" json:"color"`
-	IsDefault bool         `gorm:"default:false;not null" json:"isDefault"`
-	CreatedAt time.Time    `json:"createdAt"`
+	ID            string       `gorm:"primaryKey;type:varchar(191)" json:"id"`
+	UserID        *string      `gorm:"index;type:varchar(191)" json:"userId"` // Nullable for global defaults
+	Name          string       `gorm:"type:varchar(191);not null" json:"name"`
+	Type          CategoryType `gorm:"type:varchar(50);not null" json:"type"`
+	Icon          string       `gorm:"type:varchar(100)" json:"icon"`
+	Color         string       `gorm:"type:varchar(50)" json:"color"`
+	IsDefault     bool         `gorm:"default:false;not null" json:"isDefault"`
+	TaxDeductible bool         `gorm:"default:false;not null" json:"taxDeductible"`
+	CreatedAt     time.Time    `json:"createdAt"`
 }
 
 // ApiKey stores hashed API tokens for script/bot access.
@@ -103,18 +104,19 @@ type Budget struct {
 
 // Transaction represents a single income, expense, or transfer.
 type Transaction struct {
-	ID               string          `gorm:"primaryKey;type:varchar(191)" json:"id"`
-	UserID           string          `gorm:"index;index:idx_user_date;index:idx_user_type_date;type:varchar(191);not null" json:"userId"`
-	AccountID        string          `gorm:"index;type:varchar(191);not null" json:"accountId"`
-	CategoryID       *string         `gorm:"index;type:varchar(191)" json:"categoryId"` // Nullable (especially for transfers)
-	Type             TransactionType `gorm:"index:idx_user_type_date;type:varchar(50);not null" json:"type"`
-	Amount           float64         `gorm:"type:decimal(15,2);not null" json:"amount"`
-	AdminFee         float64         `gorm:"type:decimal(15,2);default:0;not null" json:"adminFee"`
-	Description      string          `gorm:"type:varchar(191)" json:"description"`
-	Note             string          `gorm:"type:text" json:"note"`
-	Date             time.Time       `gorm:"index;index:idx_user_date;not null" json:"date"`
-	TransferToID     *string         `gorm:"type:varchar(191)" json:"transferToId"` // ID of target account if transfer
-	ReceiptImageURL  *string         `gorm:"type:text" json:"receiptImageUrl"`       // URL foto struk/receipt
+	ID              string          `gorm:"primaryKey;type:varchar(191)" json:"id"`
+	UserID          string          `gorm:"index;index:idx_user_date;index:idx_user_type_date;type:varchar(191);not null" json:"userId"`
+	AccountID       string          `gorm:"index;type:varchar(191);not null" json:"accountId"`
+	CategoryID      *string         `gorm:"index;type:varchar(191)" json:"categoryId"` // Nullable (especially for transfers)
+	Type            TransactionType `gorm:"index:idx_user_type_date;type:varchar(50);not null" json:"type"`
+	Amount          float64         `gorm:"type:decimal(15,2);not null" json:"amount"`
+	AdminFee        float64         `gorm:"type:decimal(15,2);default:0;not null" json:"adminFee"`
+	Description     string          `gorm:"type:varchar(191)" json:"description"`
+	Note            string          `gorm:"type:text" json:"note"`
+	Date            time.Time       `gorm:"index;index:idx_user_date;not null" json:"date"`
+	TransferToID    *string         `gorm:"type:varchar(191)" json:"transferToId"` // ID of target account if transfer
+	ReceiptImageURL *string         `gorm:"type:text" json:"receiptImageUrl"`       // URL foto struk/receipt
+	TaxDeductible   bool            `gorm:"default:false;not null" json:"taxDeductible"`
 
 	// Relations (only populated when Preloaded, GORM handles them)
 	Category   *Category       `gorm:"foreignKey:CategoryID" json:"category,omitempty"`
@@ -207,4 +209,7 @@ type UserPreference struct {
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }
+
+
+
 
