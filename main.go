@@ -139,6 +139,7 @@ func main() {
 	secureRoute("POST /api/investments/buy", handlers.BuyAssetHandler)
 	secureRoute("POST /api/investments/sell", handlers.SellAssetHandler)
 	secureRoute("POST /api/investments/update-price", handlers.UpdatePriceHandler)
+	secureRoute("DELETE /api/investments/{id}", handlers.DeleteAssetHandler)
 
 	// Soft delete & restore routes
 	secureRoute("POST /api/transactions/{id}/restore", handlers.RestoreTransactionHandler)

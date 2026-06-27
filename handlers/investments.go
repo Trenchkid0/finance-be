@@ -15,6 +15,7 @@ type BuyAssetRequest struct {
 	Name                string   `json:"name" validate:"required"`
 	Quantity            float64  `json:"quantity" validate:"required,min=0.01"`
 	Price               float64  `json:"price" validate:"required,min=0.01"`
+	Type                string   `json:"type" validate:"required"`
 	AdminFee            *float64 `json:"adminFee"`
 	DeductFromAccountID *string  `json:"deductFromAccountId"` // Optional
 }

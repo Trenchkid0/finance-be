@@ -194,6 +194,7 @@ func CacheInvalidateUser(userID string) error {
 		fmt.Sprintf("goals:%s:*", userID),
 		fmt.Sprintf("insights:%s:*", userID),
 		fmt.Sprintf("summary:%s:*", userID),
+		fmt.Sprintf("reports:%s:*", userID),
 	}
 
 	return CacheDeletePatternsPipelined(patterns)

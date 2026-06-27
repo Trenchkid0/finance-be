@@ -89,9 +89,9 @@ func BuyAssetHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 2. Fetch existing holding for symbol in this investment account
+	// 2. Fetch existing holding for symbol and type in this investment account
 	var holding database.AssetHolding
-	err := tx.Where("user_id = ? AND account_id = ? AND symbol = ?", userID, req.AccountID, req.Symbol).First(&holding).Error
+	err := tx.Where("user_id = ? AND account_id = ? AND symbol = ? AND type = ?", userID, req.AccountID, req.Symbol, req.Type).First(&holding).Error
 
 	if err == nil {
 		// Existing holding: update average cost (BuyPrice) and quantity
@@ -119,6 +119,7 @@ func BuyAssetHandler(w http.ResponseWriter, r *http.Request) {
 			Quantity:     req.Quantity,
 			BuyPrice:     req.Price,
 			CurrentPrice: req.Price,
+			Type:         req.Type,
 			CreatedAt:    time.Now(),
 			UpdatedAt:    time.Now(),
 		}
@@ -297,3 +298,48 @@ func UpdatePriceHandler(w http.ResponseWriter, r *http.Request) {
 	_ = utils.CacheInvalidateUser(userID)
 	utils.JSONResponse(w, http.StatusOK, holding)
 }
+
+// DeleteAssetHandler handles deleting a holding completely
+func DeleteAssetHandler(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	if !ok {
+		utils.HandleUnauthorized(w)
+		return
+	}
+
+	if r.Method != http.MethodDelete {
+		utils.HandleMethodNotAllowed(w)
+		return
+	}
+
+	holdingID := r.PathValue("id")
+	if holdingID == "" {
+		utils.HandleBadRequest(w, "Missing holding ID")
+		return
+	}
+
+	tx := database.DB.Begin()
+
+	var holding database.AssetHolding
+	if err := tx.Where("id = ? AND user_id = ?", holdingID, userID).First(&holding).Error; err != nil {
+		tx.Rollback()
+		utils.HandleNotFound(w, "Kepemilikan investasi")
+		return
+	}
+
+	if err := tx.Delete(&holding).Error; err != nil {
+		tx.Rollback()
+		utils.HandleDBError(w, err, "delete asset holding")
+		return
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		tx.Rollback()
+		utils.HandleDBError(w, err, "commit delete asset holding")
+		return
+	}
+
+	_ = utils.CacheInvalidateUser(userID)
+	utils.JSONResponse(w, http.StatusOK, map[string]string{"message": "Asset holding deleted successfully"})
+}
+

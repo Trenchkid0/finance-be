@@ -176,6 +176,7 @@ type AssetHolding struct {
 	Quantity     float64         `gorm:"type:decimal(15,4);not null" json:"quantity"`
 	BuyPrice     float64         `gorm:"type:decimal(15,2);not null" json:"buyPrice"`
 	CurrentPrice float64         `gorm:"type:decimal(15,2);not null" json:"currentPrice"`
+	Type         string          `gorm:"type:varchar(50);default:'stock';not null" json:"type"`
 	Account      *FinanceAccount `gorm:"foreignKey:AccountID" json:"account,omitempty"`
 	CreatedAt    time.Time       `json:"createdAt"`
 	UpdatedAt    time.Time       `json:"updatedAt"`
