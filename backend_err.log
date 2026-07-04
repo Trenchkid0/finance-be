@@ -1,3 +1,0 @@
-2026/06/13 12:39:45 📂 Database loaded from: cloudbeaver:passwordmu@tcp(192.168.18.5:3306)/finance_apps?charset=utf8mb4&parseTime=True&loc=Local
-2026/06/13 12:39:45 ✅ Redis cache connected successfully at 192.168.18.5:6379 (DB: 0)
-2026/06/13 12:39:45 ⏰ Auto-Pay background scheduler started
