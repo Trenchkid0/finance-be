@@ -222,8 +222,10 @@ PORT=8080
 HOST=0.0.0.0
 
 # Database
-DATABASE_URL=racks.db                    # SQLite (default)
-# DATABASE_URL=mysql://user:pass@tcp(localhost:3306)/racks_finance  # MySQL
+# 1. SQLite (Default) - file path must end with ".db"
+DATABASE_URL=maybe.db
+# 2. MySQL - DSN format (username:password@tcp(host:port)/dbname?charset=utf8mb4&parseTime=True&loc=Local)
+# DATABASE_URL=cloudbeaver:passwordmu@tcp(localhost:3306)/finance_apps?charset=utf8mb4&parseTime=True&loc=Local
 
 # CORS
 ALLOWED_ORIGIN=http://localhost:5173     # Frontend URL
@@ -276,8 +278,13 @@ go build -o racks-backend main.go
 The server starts on `http://localhost:8080` (or configured PORT).
 
 **Demo Account (Auto-seeded):**
-- Email: `demo@racks.local`
+- Email: `demo@maybe.local`
 - Password: `password123`
+
+#### 🗄️ Database Setup Details
+GORM dynamically selects the database driver depending on the connection string in `DATABASE_URL`:
+- If the string ends with `.db`, it uses the **SQLite** driver and automatically initializes/migrates the schema in that file.
+- If it contains `@tcp(`, it uses the **MySQL** driver, automatically creating tables and columns if they do not exist.
 
 ### 3. Testing the API
 

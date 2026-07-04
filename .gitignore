@@ -1,2 +1,4 @@
 .env
 ./uploads
+maybe.db
+test.db

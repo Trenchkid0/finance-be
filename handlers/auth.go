@@ -45,6 +45,17 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Block registration if setup is already complete (at least one user exists)
+	var count int64
+	if err := database.DB.Model(&database.User{}).Count(&count).Error; err != nil {
+		utils.HandleDBError(w, err, "check user setup status")
+		return
+	}
+	if count > 0 {
+		utils.ErrorResponse(w, http.StatusForbidden, "Setup has already been completed. Registration is disabled.")
+		return
+	}
+
 	// Check if user already exists
 	var existing database.User
 	if err := database.DB.Where("email = ?", req.Email).First(&existing).Error; err == nil {
@@ -391,5 +402,27 @@ func ResetPasswordHandler(w http.ResponseWriter, r *http.Request) {
 
 	utils.JSONResponse(w, http.StatusOK, map[string]string{
 		"message": "Kata sandi berhasil diperbarui",
+	})
+}
+
+type SetupStatusResponse struct {
+	IsSetupComplete bool `json:"isSetupComplete"`
+}
+
+// SetupStatusHandler checks if there are any registered users in the database
+func SetupStatusHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		utils.HandleMethodNotAllowed(w)
+		return
+	}
+
+	var count int64
+	if err := database.DB.Model(&database.User{}).Count(&count).Error; err != nil {
+		utils.HandleDBError(w, err, "check user setup status")
+		return
+	}
+
+	utils.JSONResponse(w, http.StatusOK, SetupStatusResponse{
+		IsSetupComplete: count > 0,
 	})
 }
