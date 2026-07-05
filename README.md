@@ -131,8 +131,10 @@ The database is automatically migrated on first run. Core models:
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/auth/register` | Register new user |
+| GET | `/api/auth/setup-status` | Get registration setup completeness status |
+| POST | `/api/auth/register` | Register first user (Setup Wizard) |
 | POST | `/api/auth/login` | Login (returns JWT token + cookie) |
+| POST | `/api/auth/forgot-password` | Change password directly (requires Email, Old Password, New Password) |
 | POST | `/api/auth/logout` | Logout (clears session cookie) |
 | POST | `/webhook/telegram` | Telegram webhook (public, called by Telegram) |
 
@@ -277,23 +279,20 @@ go build -o racks-backend main.go
 
 The server starts on `http://localhost:8080` (or configured PORT).
 
-**Demo Account (Auto-seeded):**
-- Email: `demo@maybe.local`
-- Password: `password123`
+**First-Time Setup Wizard (Single-User Mode):**
+- When starting with an empty database, the backend does **not** seed any users, ensuring that the database remains pristine.
+- The web app automatically detects the empty database and prompts you to create your secure admin account via the **First-Time Setup Wizard**.
+- After the first user is created, the registration API is immediately locked to prevent any other signups.
 
 #### 🗄️ Database Setup Details
 GORM dynamically selects the database driver depending on the connection string in `DATABASE_URL`:
-- If the string ends with `.db`, it uses the **SQLite** driver and automatically initializes/migrates the schema in that file.
-- If it contains `@tcp(`, it uses the **MySQL** driver, automatically creating tables and columns if they do not exist.
+- **SQLite**: If the connection string ends with `.db` (e.g. `maybe.db`), it uses the SQLite driver and automatically creates the file.
+- **MySQL**: If the connection string contains `@tcp(`, it uses the MySQL driver. On startup, the backend automatically connects to the server and creates the database (if it does not exist yet) using `CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci` and logs the verification:
+  `🚀 MySQL: Database '<dbname>' checked/created successfully (CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci)`
 
 ### 3. Testing the API
 
 ```bash
-# Run automated API tests (Windows PowerShell)
-./test-api.ps1
-
-# Run backend verification
-./test-backend.ps1
 
 # Run Go tests
 go test ./...

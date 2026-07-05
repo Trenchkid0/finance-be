@@ -294,7 +294,9 @@ func MeHandler(w http.ResponseWriter, r *http.Request) {
 
 
 type ForgotPasswordRequest struct {
-	Email string `json:"email" validate:"required,email"`
+	Email       string `json:"email" validate:"required,email"`
+	OldPassword string `json:"oldPassword" validate:"required"`
+	Password    string `json:"password" validate:"required,min=8"`
 }
 
 func ForgotPasswordHandler(w http.ResponseWriter, r *http.Request) {
@@ -315,31 +317,37 @@ func ForgotPasswordHandler(w http.ResponseWriter, r *http.Request) {
 
 	var user database.User
 	if err := database.DB.Where("email = ?", req.Email).First(&user).Error; err != nil {
-		utils.ErrorResponse(w, http.StatusNotFound, "Email not registered")
+		utils.ErrorResponse(w, http.StatusNotFound, "Email tidak terdaftar")
 		return
 	}
 
-	// Generate reset token
-	token := uuid.New().String()
-	
-	// Store hash of token in DB
-	hash := sha256.Sum256([]byte(token))
-	hashHex := hex.EncodeToString(hash[:])
-	
-	expires := time.Now().Add(1 * time.Hour)
-	
-	user.ResetToken = hashHex
-	user.ResetTokenExpires = &expires
+	// Verify old password
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.OldPassword)); err != nil {
+		utils.ErrorResponse(w, http.StatusUnauthorized, "Kata sandi lama salah")
+		return
+	}
+
+	// Hash new password
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		utils.ErrorResponse(w, http.StatusInternalServerError, "Gagal memproses kata sandi baru")
+		return
+	}
+
+	user.Password = string(hashedPassword)
+	user.ResetToken = ""
+	user.ResetTokenExpires = nil
+
 	if err := database.DB.Save(&user).Error; err != nil {
-		utils.HandleDBError(w, err, "save reset token")
+		utils.HandleDBError(w, err, "update password")
 		return
 	}
 
-	// Log the reset URL for simulated debugging purposes (dev mode)
-	utils.Log.Info().Str("email", req.Email).Str("token", token).Msg("Simulating sending password reset email")
+	// Invalidate session/cache
+	_ = utils.CacheInvalidateUser(user.ID)
 
 	utils.JSONResponse(w, http.StatusOK, map[string]interface{}{
-		"message": "Reset link sent successfully",
+		"message": "Password updated successfully",
 	})
 }
 type ResetPasswordRequest struct {
