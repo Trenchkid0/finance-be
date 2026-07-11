@@ -45,17 +45,6 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Block registration if setup is already complete (at least one user exists)
-	var count int64
-	if err := database.DB.Model(&database.User{}).Count(&count).Error; err != nil {
-		utils.HandleDBError(w, err, "check user setup status")
-		return
-	}
-	if count > 0 {
-		utils.ErrorResponse(w, http.StatusForbidden, "Setup has already been completed. Registration is disabled.")
-		return
-	}
-
 	// Check if user already exists
 	var existing database.User
 	if err := database.DB.Where("email = ?", req.Email).First(&existing).Error; err == nil {
@@ -294,9 +283,7 @@ func MeHandler(w http.ResponseWriter, r *http.Request) {
 
 
 type ForgotPasswordRequest struct {
-	Email       string `json:"email" validate:"required,email"`
-	OldPassword string `json:"oldPassword" validate:"required"`
-	Password    string `json:"password" validate:"required,min=8"`
+	Email string `json:"email" validate:"required,email"`
 }
 
 func ForgotPasswordHandler(w http.ResponseWriter, r *http.Request) {
@@ -317,37 +304,31 @@ func ForgotPasswordHandler(w http.ResponseWriter, r *http.Request) {
 
 	var user database.User
 	if err := database.DB.Where("email = ?", req.Email).First(&user).Error; err != nil {
-		utils.ErrorResponse(w, http.StatusNotFound, "Email tidak terdaftar")
+		utils.ErrorResponse(w, http.StatusNotFound, "Email not registered")
 		return
 	}
 
-	// Verify old password
-	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.OldPassword)); err != nil {
-		utils.ErrorResponse(w, http.StatusUnauthorized, "Kata sandi lama salah")
-		return
-	}
-
-	// Hash new password
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
-	if err != nil {
-		utils.ErrorResponse(w, http.StatusInternalServerError, "Gagal memproses kata sandi baru")
-		return
-	}
-
-	user.Password = string(hashedPassword)
-	user.ResetToken = ""
-	user.ResetTokenExpires = nil
-
+	// Generate reset token
+	token := uuid.New().String()
+	
+	// Store hash of token in DB
+	hash := sha256.Sum256([]byte(token))
+	hashHex := hex.EncodeToString(hash[:])
+	
+	expires := time.Now().Add(1 * time.Hour)
+	
+	user.ResetToken = hashHex
+	user.ResetTokenExpires = &expires
 	if err := database.DB.Save(&user).Error; err != nil {
-		utils.HandleDBError(w, err, "update password")
+		utils.HandleDBError(w, err, "save reset token")
 		return
 	}
 
-	// Invalidate session/cache
-	_ = utils.CacheInvalidateUser(user.ID)
+	// Log the reset URL for simulated debugging purposes (dev mode)
+	utils.Log.Info().Str("email", req.Email).Str("token", token).Msg("Simulating sending password reset email")
 
 	utils.JSONResponse(w, http.StatusOK, map[string]interface{}{
-		"message": "Password updated successfully",
+		"message": "Reset link sent successfully",
 	})
 }
 type ResetPasswordRequest struct {
@@ -410,27 +391,5 @@ func ResetPasswordHandler(w http.ResponseWriter, r *http.Request) {
 
 	utils.JSONResponse(w, http.StatusOK, map[string]string{
 		"message": "Kata sandi berhasil diperbarui",
-	})
-}
-
-type SetupStatusResponse struct {
-	IsSetupComplete bool `json:"isSetupComplete"`
-}
-
-// SetupStatusHandler checks if there are any registered users in the database
-func SetupStatusHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		utils.HandleMethodNotAllowed(w)
-		return
-	}
-
-	var count int64
-	if err := database.DB.Model(&database.User{}).Count(&count).Error; err != nil {
-		utils.HandleDBError(w, err, "check user setup status")
-		return
-	}
-
-	utils.JSONResponse(w, http.StatusOK, SetupStatusResponse{
-		IsSetupComplete: count > 0,
 	})
 }

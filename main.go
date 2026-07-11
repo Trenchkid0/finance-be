@@ -70,7 +70,6 @@ func main() {
 	// Public Routes
 	mux.HandleFunc("POST /api/auth/login", handlers.LoginHandler)
 	mux.HandleFunc("POST /api/auth/register", handlers.RegisterHandler)
-	mux.HandleFunc("GET /api/auth/setup-status", handlers.SetupStatusHandler)
 	mux.HandleFunc("POST /api/auth/logout", handlers.LogoutHandler)
 	mux.HandleFunc("POST /api/auth/forgot-password", handlers.ForgotPasswordHandler)
 	mux.HandleFunc("POST /api/auth/reset-password", handlers.ResetPasswordHandler)
@@ -100,6 +99,7 @@ func main() {
 	secureRoute("GET /api/transactions/export", handlers.ExportTransactionsHandler)
 	secureRoute("GET /api/transactions/export/tax", handlers.ExportTaxTransactionsHandler)
 	secureRoute("POST /api/transactions/import", handlers.ImportTransactionsHandler)
+	secureRoute("POST /api/transactions/bulk", handlers.BulkCreateTransactionsHandler)
 	secureRoute("GET /api/transactions/{id}", handlers.TransactionDetailHandler)
 	secureRoute("PUT /api/transactions/{id}", handlers.TransactionDetailHandler)
 	secureRoute("DELETE /api/transactions/{id}", handlers.TransactionDetailHandler)
@@ -115,6 +115,7 @@ func main() {
 	secureRoute("GET /api/summary", handlers.SummaryHandler)
 	secureRoute("GET /api/reports", handlers.ReportsHandler)
 	secureRoute("POST /api/ai/scan", handlers.AIScanHandler)
+	secureRoute("POST /api/ai/scan-bulk", handlers.BulkAIScanHandler)
 	secureRoute("GET /api/ai/status", handlers.AIStatusHandler)
 	secureRoute("GET /api/ai/insights", handlers.InsightsHandler)
 

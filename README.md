@@ -131,10 +131,8 @@ The database is automatically migrated on first run. Core models:
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/auth/setup-status` | Get registration setup completeness status |
-| POST | `/api/auth/register` | Register first user (Setup Wizard) |
+| POST | `/api/auth/register` | Register new user |
 | POST | `/api/auth/login` | Login (returns JWT token + cookie) |
-| POST | `/api/auth/forgot-password` | Change password directly (requires Email, Old Password, New Password) |
 | POST | `/api/auth/logout` | Logout (clears session cookie) |
 | POST | `/webhook/telegram` | Telegram webhook (public, called by Telegram) |
 
@@ -224,10 +222,8 @@ PORT=8080
 HOST=0.0.0.0
 
 # Database
-# 1. SQLite (Default) - file path must end with ".db"
-DATABASE_URL=maybe.db
-# 2. MySQL - DSN format (username:password@tcp(host:port)/dbname?charset=utf8mb4&parseTime=True&loc=Local)
-# DATABASE_URL=cloudbeaver:passwordmu@tcp(localhost:3306)/finance_apps?charset=utf8mb4&parseTime=True&loc=Local
+DATABASE_URL=racks.db                    # SQLite (default)
+# DATABASE_URL=mysql://user:pass@tcp(localhost:3306)/racks_finance  # MySQL
 
 # CORS
 ALLOWED_ORIGIN=http://localhost:5173     # Frontend URL
@@ -279,20 +275,18 @@ go build -o racks-backend main.go
 
 The server starts on `http://localhost:8080` (or configured PORT).
 
-**First-Time Setup Wizard (Single-User Mode):**
-- When starting with an empty database, the backend does **not** seed any users, ensuring that the database remains pristine.
-- The web app automatically detects the empty database and prompts you to create your secure admin account via the **First-Time Setup Wizard**.
-- After the first user is created, the registration API is immediately locked to prevent any other signups.
-
-#### 🗄️ Database Setup Details
-GORM dynamically selects the database driver depending on the connection string in `DATABASE_URL`:
-- **SQLite**: If the connection string ends with `.db` (e.g. `maybe.db`), it uses the SQLite driver and automatically creates the file.
-- **MySQL**: If the connection string contains `@tcp(`, it uses the MySQL driver. On startup, the backend automatically connects to the server and creates the database (if it does not exist yet) using `CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci` and logs the verification:
-  `🚀 MySQL: Database '<dbname>' checked/created successfully (CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci)`
+**Demo Account (Auto-seeded):**
+- Email: `demo@racks.local`
+- Password: `password123`
 
 ### 3. Testing the API
 
 ```bash
+# Run automated API tests (Windows PowerShell)
+./test-api.ps1
+
+# Run backend verification
+./test-backend.ps1
 
 # Run Go tests
 go test ./...

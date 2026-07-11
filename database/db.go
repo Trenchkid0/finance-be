@@ -67,29 +67,6 @@ func InitDB(connectionString string) (*gorm.DB, error) {
 				dsn += "?parseTime=True"
 			}
 		}
-
-		// Auto-create MySQL database if it does not exist
-		baseDSN, dbName := parseMySQLDSN(dsn)
-		if dbName != "" {
-			tempDial := mysql.Open(baseDSN)
-			tempDB, err := gorm.Open(tempDial, &gorm.Config{
-				Logger: logger.Default.LogMode(logger.Silent),
-			})
-			if err == nil {
-				query := fmt.Sprintf("CREATE DATABASE IF NOT EXISTS `%s` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci", dbName)
-				if err := tempDB.Exec(query).Error; err == nil {
-					fmt.Printf("🚀 MySQL: Database `%s` checked/created successfully (CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci)\n", dbName)
-				} else {
-					fmt.Printf("⚠️ Warning: Failed to check/create MySQL database `%s`: %v\n", dbName, err)
-				}
-				if sqlDB, err := tempDB.DB(); err == nil {
-					sqlDB.Close()
-				}
-			} else {
-				fmt.Printf("⚠️ Warning: Failed to connect to MySQL server without database to auto-create: %v\n", err)
-			}
-		}
-
 		dialeg = mysql.Open(dsn)
 	} else {
 		dialeg = sqlite.Open(connectionString)
@@ -142,24 +119,19 @@ func InitDB(connectionString string) (*gorm.DB, error) {
 
 	DB = db
 
-	// Check if default categories exist. If not, seed them (for both development & production)
-	var catCount int64
-	db.Model(&Category{}).Where("user_id IS NULL AND is_default = ?", true).Count(&catCount)
-	if catCount == 0 {
-		fmt.Println("🌱 Default categories not found. Seeding default categories...")
-		err = SeedDefaultCategories(db)
-		if err != nil {
-			fmt.Printf("⚠️ Failed to seed default categories: %v\n", err)
-		} else {
-			fmt.Println("✅ Default categories seeded.")
-		}
-	}
-
-	// Check if any users exist in the database.
+	// Check if categories are empty or demo user is missing. If so, seed defaults.
+	var count int64
+	db.Model(&Category{}).Count(&count)
 	var userCount int64
-	db.Model(&User{}).Count(&userCount)
-	if userCount == 0 {
-		fmt.Println("ℹ️ Database has 0 users. Ready for First-Time Setup Wizard.")
+	db.Model(&User{}).Where("email = ?", "demo@maybe.local").Count(&userCount)
+	if count == 0 || userCount == 0 {
+		fmt.Println("🌱 Database is empty or demo user is missing. Seeding default data...")
+		err = SeedDemoData(db)
+		if err != nil {
+			fmt.Printf("⚠️ Seeding failed: %v\n", err)
+		} else {
+			fmt.Println("✅ Seeding complete.")
+		}
 	}
 
 	return db, nil
@@ -173,8 +145,16 @@ func slug(input string) string {
 	return strings.Join(fields, "-")
 }
 
-// SeedDefaultCategories seeds the initial system category templates
-func SeedDefaultCategories(db *gorm.DB) error {
+// SeedDemoData replicates the Prisma seed script in Go
+func SeedDemoData(db *gorm.DB) error {
+	appEnv := strings.ToLower(os.Getenv("APP_ENV"))
+	goEnv := strings.ToLower(os.Getenv("GO_ENV"))
+	if appEnv == "production" || appEnv == "prod" || goEnv == "production" || goEnv == "prod" {
+		fmt.Println("⚠️ SeedDemoData: Seeding is disabled in production/prod environment.")
+		return nil
+	}
+
+	// 1. Seed default categories
 	expenseCategories := []struct {
 		name  string
 		icon  string
@@ -201,6 +181,7 @@ func SeedDefaultCategories(db *gorm.DB) error {
 		{"Lainnya", "💰", "#8B949E"},
 	}
 
+	// ✅ PERF: Batch-insert categories instead of one-by-one saves
 	allCategories := make([]Category, 0, len(expenseCategories)+len(incomeCategories))
 	for _, c := range expenseCategories {
 		allCategories = append(allCategories, Category{
@@ -216,33 +197,9 @@ func SeedDefaultCategories(db *gorm.DB) error {
 			IsDefault: true, CreatedAt: time.Now(),
 		})
 	}
-	return db.CreateInBatches(&allCategories, 20).Error
-}
-
-// SeedDemoData replicates the Prisma seed script in Go
-func SeedDemoData(db *gorm.DB) error {
-	appEnv := strings.ToLower(os.Getenv("APP_ENV"))
-	goEnv := strings.ToLower(os.Getenv("GO_ENV"))
-	if appEnv == "production" || appEnv == "prod" || goEnv == "production" || goEnv == "prod" {
-		fmt.Println("⚠️ SeedDemoData: Seeding is disabled in production/prod environment.")
-		return nil
-	}
-
-	// Fetch default categories from DB
-	var allCategories []Category
-	if err := db.Where("is_default = ? AND user_id IS NULL", true).Find(&allCategories).Error; err != nil {
-		return err
-	}
-
-	var seededExpenses []Category
-	var seededIncomes []Category
-	for _, c := range allCategories {
-		if c.Type == CategoryTypeExpense {
-			seededExpenses = append(seededExpenses, c)
-		} else if c.Type == CategoryTypeIncome {
-			seededIncomes = append(seededIncomes, c)
-		}
-	}
+	db.CreateInBatches(&allCategories, 20)
+	seededExpenses := allCategories[:len(expenseCategories)]
+	seededIncomes := allCategories[len(expenseCategories):]
 
 	// 2. Seed Demo User
 	demoEmail := "demo@maybe.local"
@@ -505,30 +462,4 @@ func runSQLMigrations(db *gorm.DB) {
 		}
 		fmt.Printf("🚀 Migration applied: %s\n", entry.Name())
 	}
-}
-
-// parseMySQLDSN splits a GORM MySQL DSN into server DSN (without database name) and database name
-func parseMySQLDSN(dsn string) (baseDSN, dbName string) {
-	atIndex := strings.LastIndex(dsn, "@")
-	if atIndex == -1 {
-		return dsn, ""
-	}
-
-	slashIndex := strings.Index(dsn[atIndex:], "/")
-	if slashIndex == -1 {
-		return dsn, ""
-	}
-	slashIndex += atIndex
-
-	baseDSN = dsn[:slashIndex+1]
-
-	remaining := dsn[slashIndex+1:]
-	qIndex := strings.Index(remaining, "?")
-	if qIndex == -1 {
-		dbName = remaining
-	} else {
-		dbName = remaining[:qIndex]
-		baseDSN += remaining[qIndex:]
-	}
-	return baseDSN, dbName
 }
