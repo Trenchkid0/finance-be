@@ -12,15 +12,16 @@ import (
 )
 
 type BulkTransactionItem struct {
-	AccountID    string                   `json:"accountId" validate:"required"`
-	CategoryID   *string                  `json:"categoryId"`
-	Type         database.TransactionType `json:"type" validate:"required,oneof=income|expense|transfer"`
-	Amount       float64                  `json:"amount" validate:"required,min=0.01"`
-	AdminFee     *float64                 `json:"adminFee"`
-	Description  string                   `json:"description"`
-	Note         string                   `json:"note"`
-	Date         string                   `json:"date"` // e.g. "2026-06-05" or RFC3339
-	TransferToID *string                  `json:"transferToId"`
+	AccountID       string                   `json:"accountId" validate:"required"`
+	CategoryID      *string                  `json:"categoryId"`
+	Type            database.TransactionType `json:"type" validate:"required,oneof=income|expense|transfer"`
+	Amount          float64                  `json:"amount" validate:"required,min=0.01"`
+	AdminFee        *float64                 `json:"adminFee"`
+	Description     string                   `json:"description"`
+	Note            string                   `json:"note"`
+	Date            string                   `json:"date"` // e.g. "2026-06-05" or RFC3339
+	TransferToID    *string                  `json:"transferToId"`
+	ReceiptImageURL *string                  `json:"receiptImageUrl"`
 }
 
 type BulkCreateTransactionsRequest struct {
@@ -105,18 +106,19 @@ func BulkCreateTransactionsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		transaction := database.Transaction{
-			UserID:       userID,
-			AccountID:    item.AccountID,
-			CategoryID:   item.CategoryID,
-			Type:         item.Type,
-			Amount:       item.Amount,
-			AdminFee:     adminFee,
-			Description:  item.Description,
-			Note:         item.Note,
-			Date:         parsedDate,
-			TransferToID: item.TransferToID,
-			CreatedAt:    now,
-			UpdatedAt:    now,
+			UserID:          userID,
+			AccountID:       item.AccountID,
+			CategoryID:      item.CategoryID,
+			Type:            item.Type,
+			Amount:          item.Amount,
+			AdminFee:        adminFee,
+			Description:     item.Description,
+			Note:            item.Note,
+			Date:            parsedDate,
+			TransferToID:    item.TransferToID,
+			ReceiptImageURL: item.ReceiptImageURL,
+			CreatedAt:       now,
+			UpdatedAt:       now,
 		}
 		batchTx = append(batchTx, transaction)
 	}

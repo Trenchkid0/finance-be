@@ -67,14 +67,35 @@ func InitDB(connectionString string) (*gorm.DB, error) {
 				dsn += "?parseTime=True"
 			}
 		}
+
+		// Prevent indefinite connection hang if MySQL is unreachable
+		if !strings.Contains(dsn, "timeout=") {
+			if strings.Contains(dsn, "?") {
+				dsn += "&timeout=5s"
+			} else {
+				dsn += "?timeout=5s"
+			}
+		}
 		dialeg = mysql.Open(dsn)
+		fmt.Printf("Database: connecting to MySQL at %s...\n", dsn)
 	} else {
 		dialeg = sqlite.Open(connectionString)
+		fmt.Printf("Database: connecting to SQLite at %s...\n", connectionString)
 	}
 
 	db, err := gorm.Open(dialeg, config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
+	}
+	fmt.Println("Database: connection established successfully!")
+
+	// Set lock wait timeout for MySQL to prevent hanging indefinitely on locks
+	if db.Dialector.Name() == "mysql" {
+		if err := db.Exec("SET SESSION lock_wait_timeout = 5").Error; err != nil {
+			fmt.Printf("⚠️ Failed to set lock_wait_timeout: %v\n", err)
+		} else {
+			fmt.Println("Database: lock_wait_timeout set to 5 seconds")
+		}
 	}
 
 	// ✅ PERF: Tune connection pool — prevents connection exhaustion and stale connections
@@ -87,6 +108,7 @@ func InitDB(connectionString string) (*gorm.DB, error) {
 	sqlDB.SetConnMaxLifetime(5 * time.Minute)
 	sqlDB.SetConnMaxIdleTime(3 * time.Minute)
 
+	fmt.Println("Database: running auto-migrations...")
 	// Run Auto-migrations
 	err = db.AutoMigrate(
 		&User{},
@@ -104,9 +126,11 @@ func InitDB(connectionString string) (*gorm.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to migrate database: %w", err)
 	}
+	fmt.Println("Database: auto-migrations finished!")
 
 	// Manually alter key_prefix column to varchar(255) to support storing the full key
 	if db.Dialector.Name() == "mysql" {
+		fmt.Println("Database: modifying api_keys table...")
 		if err := db.Exec("ALTER TABLE api_keys MODIFY COLUMN key_prefix VARCHAR(255) NOT NULL").Error; err != nil {
 			fmt.Printf("⚠️ Failed to modify key_prefix column to VARCHAR(255): %v\n", err)
 		} else {
@@ -115,11 +139,14 @@ func InitDB(connectionString string) (*gorm.DB, error) {
 	}
 
 	// Run SQL migrations
+	fmt.Println("Database: running SQL migrations...")
 	runSQLMigrations(db)
+	fmt.Println("Database: SQL migrations finished!")
 
 	DB = db
 
 	// Check if categories are empty or demo user is missing. If so, seed defaults.
+	fmt.Println("Database: checking if seed is needed...")
 	var count int64
 	db.Model(&Category{}).Count(&count)
 	var userCount int64
@@ -133,6 +160,7 @@ func InitDB(connectionString string) (*gorm.DB, error) {
 			fmt.Println("✅ Seeding complete.")
 		}
 	}
+	fmt.Println("Database: InitDB completed!")
 
 	return db, nil
 }
