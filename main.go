@@ -99,6 +99,7 @@ func main() {
 	secureRoute("GET /api/transactions/export", handlers.ExportTransactionsHandler)
 	secureRoute("GET /api/transactions/export/tax", handlers.ExportTaxTransactionsHandler)
 	secureRoute("POST /api/transactions/import", handlers.ImportTransactionsHandler)
+	secureRoute("POST /api/transactions/import-file", handlers.ParseFileImportHandler)
 	secureRoute("POST /api/transactions/bulk", handlers.BulkCreateTransactionsHandler)
 	secureRoute("GET /api/transactions/{id}", handlers.TransactionDetailHandler)
 	secureRoute("PUT /api/transactions/{id}", handlers.TransactionDetailHandler)
