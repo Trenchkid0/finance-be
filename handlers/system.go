@@ -1,12 +1,16 @@
 package handlers
 
 import (
+	"archive/zip"
 	"context"
+	"encoding/csv"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 
 	"maybe-finance-backend/database"
@@ -245,4 +249,232 @@ func SystemHealthHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	utils.JSONResponse(w, http.StatusOK, healthData)
+}
+
+// GetDatabaseTypeHandler returns the database driver name (sqlite or mysql)
+func GetDatabaseTypeHandler(w http.ResponseWriter, r *http.Request) {
+	_, ok := middleware.GetUserIDFromContext(r.Context())
+	if !ok {
+		utils.HandleUnauthorized(w)
+		return
+	}
+
+	if r.Method != http.MethodGet {
+		utils.HandleMethodNotAllowed(w)
+		return
+	}
+
+	dbType := database.DB.Dialector.Name()
+	utils.JSONResponse(w, http.StatusOK, map[string]string{
+		"dbType": dbType,
+	})
+}
+
+// BackupSQLHandler generates and downloads a SQL dump of the MySQL database
+func BackupSQLHandler(w http.ResponseWriter, r *http.Request) {
+	_, ok := middleware.GetUserIDFromContext(r.Context())
+	if !ok {
+		utils.HandleUnauthorized(w)
+		return
+	}
+
+	if r.Method != http.MethodGet {
+		utils.HandleMethodNotAllowed(w)
+		return
+	}
+
+	if database.DB.Dialector.Name() != "mysql" {
+		utils.ErrorResponse(w, http.StatusBadRequest, "SQL backup is only supported for MySQL.")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/sql")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=maybe_finance_backup_%s.sql", time.Now().Format("2006-01-02")))
+
+	w.Write([]byte(fmt.Sprintf("-- Maybe Finance SQL Dump\n-- Generated on: %s\n\n", time.Now().Format(time.RFC1123))))
+	w.Write([]byte("SET FOREIGN_KEY_CHECKS = 0;\n\n"))
+
+	tables, err := database.DB.Migrator().GetTables()
+	if err != nil {
+		utils.HandleDBError(w, err, "get tables for SQL backup")
+		return
+	}
+
+	for _, table := range tables {
+		// Get create table DDL
+		var createDDL struct {
+			Table      string `gorm:"column:Table"`
+			CreateTable string `gorm:"column:Create Table"`
+		}
+		if err := database.DB.Raw(fmt.Sprintf("SHOW CREATE TABLE `%s`", table)).Scan(&createDDL).Error; err == nil {
+			w.Write([]byte(fmt.Sprintf("\n-- Table structure for table `%s`\n", table)))
+			w.Write([]byte(fmt.Sprintf("DROP TABLE IF EXISTS `%s`;\n", table)))
+			w.Write([]byte(createDDL.CreateTable + ";\n\n"))
+		}
+
+		rows, err := database.DB.Table(table).Rows()
+		if err != nil {
+			continue
+		}
+
+		cols, err := rows.Columns()
+		if err != nil {
+			rows.Close()
+			continue
+		}
+
+		scanArgs := make([]interface{}, len(cols))
+		values := make([]interface{}, len(cols))
+		for i := range values {
+			scanArgs[i] = &values[i]
+		}
+
+		w.Write([]byte(fmt.Sprintf("-- Dumping data for table `%s`\n", table)))
+		for rows.Next() {
+			if err := rows.Scan(scanArgs...); err != nil {
+				continue
+			}
+
+			valStrs := make([]string, len(cols))
+			for i, val := range values {
+				if val == nil {
+					valStrs[i] = "NULL"
+				} else {
+					switch v := val.(type) {
+					case []byte:
+						valStrs[i] = fmt.Sprintf("'%s'", escapeSQLString(string(v)))
+					case string:
+						valStrs[i] = fmt.Sprintf("'%s'", escapeSQLString(v))
+					case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+						valStrs[i] = fmt.Sprintf("%d", v)
+					case float32, float64:
+						valStrs[i] = fmt.Sprintf("%f", v)
+					case bool:
+						if v {
+							valStrs[i] = "1"
+						} else {
+							valStrs[i] = "0"
+						}
+					case time.Time:
+						valStrs[i] = fmt.Sprintf("'%s'", v.Format("2006-01-02 15:04:05"))
+					default:
+						valStrs[i] = fmt.Sprintf("'%s'", escapeSQLString(fmt.Sprintf("%v", v)))
+					}
+				}
+			}
+
+			colNames := make([]string, len(cols))
+			for i, col := range cols {
+				colNames[i] = fmt.Sprintf("`%s`", col)
+			}
+
+			insertStmt := fmt.Sprintf("INSERT INTO `%s` (%s) VALUES (%s);\n", 
+				table, 
+				strings.Join(colNames, ", "), 
+				strings.Join(valStrs, ", "),
+			)
+			w.Write([]byte(insertStmt))
+		}
+		rows.Close()
+	}
+
+	w.Write([]byte("\nSET FOREIGN_KEY_CHECKS = 1;\n"))
+}
+
+// BackupCSVHandler generates and downloads a ZIP containing all tables as CSV files
+func BackupCSVHandler(w http.ResponseWriter, r *http.Request) {
+	_, ok := middleware.GetUserIDFromContext(r.Context())
+	if !ok {
+		utils.HandleUnauthorized(w)
+		return
+	}
+
+	if r.Method != http.MethodGet {
+		utils.HandleMethodNotAllowed(w)
+		return
+	}
+
+	if database.DB.Dialector.Name() != "mysql" {
+		utils.ErrorResponse(w, http.StatusBadRequest, "CSV backup is only supported for MySQL.")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=maybe_finance_csv_backup_%s.zip", time.Now().Format("2006-01-02")))
+
+	archive := zip.NewWriter(w)
+	defer archive.Close()
+
+	tables, err := database.DB.Migrator().GetTables()
+	if err != nil {
+		utils.HandleDBError(w, err, "get tables for CSV backup")
+		return
+	}
+
+	for _, table := range tables {
+		f, err := archive.Create(fmt.Sprintf("%s.csv", table))
+		if err != nil {
+			continue
+		}
+
+		csvWriter := csv.NewWriter(f)
+
+		rows, err := database.DB.Table(table).Rows()
+		if err != nil {
+			continue
+		}
+
+		cols, err := rows.Columns()
+		if err != nil {
+			rows.Close()
+			continue
+		}
+
+		// Write header
+		if err := csvWriter.Write(cols); err != nil {
+			rows.Close()
+			continue
+		}
+
+		scanArgs := make([]interface{}, len(cols))
+		values := make([]interface{}, len(cols))
+		for i := range values {
+			scanArgs[i] = &values[i]
+		}
+
+		for rows.Next() {
+			if err := rows.Scan(scanArgs...); err != nil {
+				continue
+			}
+
+			record := make([]string, len(cols))
+			for i, val := range values {
+				if val == nil {
+					record[i] = ""
+				} else {
+					switch v := val.(type) {
+					case []byte:
+						record[i] = string(v)
+					case string:
+						record[i] = v
+					case time.Time:
+						record[i] = v.Format(time.RFC3339)
+					default:
+						record[i] = fmt.Sprintf("%v", v)
+					}
+				}
+			}
+			_ = csvWriter.Write(record)
+		}
+		rows.Close()
+		csvWriter.Flush()
+	}
+}
+
+func escapeSQLString(val string) string {
+	val = strings.ReplaceAll(val, "\\", "\\\\")
+	val = strings.ReplaceAll(val, "'", "\\'")
+	val = strings.ReplaceAll(val, "\n", "\\n")
+	val = strings.ReplaceAll(val, "\r", "\\r")
+	return val
 }

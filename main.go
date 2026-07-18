@@ -161,9 +161,13 @@ func main() {
 	secureRoute("PUT /api/preferences", handlers.PreferencesHandler)
 
 	// System Data management routes
+	secureRoute("GET /api/system/db-type", handlers.GetDatabaseTypeHandler)
 	secureRoute("GET /api/system/backup", handlers.BackupDatabaseHandler)
+	secureRoute("GET /api/system/backup/sql", handlers.BackupSQLHandler)
+	secureRoute("GET /api/system/backup/csv", handlers.BackupCSVHandler)
 	secureRoute("POST /api/system/restore", handlers.RestoreDatabaseHandler)
 	secureRoute("GET /api/system/export-all", handlers.ExportAllDataHandler)
+	secureRoute("GET /api/system/export", handlers.ExportAllDataHandler)
 
 	// Auto-Pay History route
 	secureRoute("GET /api/recurring/auto-pay-history", handlers.AutoPayHistoryHandler)
