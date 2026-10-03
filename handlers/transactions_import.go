@@ -80,6 +80,7 @@ func ImportTransactionsHandler(w http.ResponseWriter, r *http.Request) {
 	imported := 0
 	errors := []string{}
 	var batchTx []database.Transaction // collect for batch insert
+	adjustments := make(map[string]float64)
 
 	for i, record := range records[1:] {
 		if len(record) < 6 {
@@ -171,10 +172,19 @@ func ImportTransactionsHandler(w http.ResponseWriter, r *http.Request) {
 			note = strings.TrimSpace(record[7])
 		}
 
-		// Reconcile balance
-		if err := services.AdjustBalances(tx, userID, sourceAcc.ID, transferToID, txType, amount, 0, 1); err != nil {
-			errors = append(errors, fmt.Sprintf("Row %d: failed to update balance", i+2))
-			continue
+		// Accumulate balance adjustments
+		switch txType {
+		case database.TransactionTypeIncome:
+			adjustments[sourceAcc.ID] += amount
+		case database.TransactionTypeExpense:
+			adjustments[sourceAcc.ID] -= amount
+		case database.TransactionTypeTransfer:
+			if transferToID == nil || *transferToID == "" {
+				errors = append(errors, fmt.Sprintf("Row %d: missing transfer destination account", i+2))
+				continue
+			}
+			adjustments[sourceAcc.ID] -= amount
+			adjustments[*transferToID] += amount
 		}
 
 		// Create transaction
@@ -199,6 +209,13 @@ func ImportTransactionsHandler(w http.ResponseWriter, r *http.Request) {
 	if imported == 0 {
 		tx.Rollback()
 		utils.HandleBadRequest(w, fmt.Sprintf("No transactions imported. Errors: %v", errors))
+		return
+	}
+
+	// Reconcile balance in bulk
+	if err := services.AdjustBalancesBulk(tx, userID, adjustments); err != nil {
+		tx.Rollback()
+		utils.HandleDBError(w, err, "update balances in bulk")
 		return
 	}
 

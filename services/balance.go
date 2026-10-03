@@ -40,3 +40,23 @@ func AdjustBalances(tx *gorm.DB, userID string, accountID string, transferToID *
 
 	return nil
 }
+
+// AdjustBalancesBulk updates the balance of multiple accounts using an aggregated map of deltas (changes).
+// It does one SELECT and one UPDATE query per affected account, reducing DB operations for bulk writes.
+func AdjustBalancesBulk(tx *gorm.DB, userID string, adjustments map[string]float64) error {
+	for accountID, delta := range adjustments {
+		if delta == 0 {
+			continue
+		}
+		var acc database.FinanceAccount
+		if err := tx.Where("id = ? AND user_id = ?", accountID, userID).First(&acc).Error; err != nil {
+			return err
+		}
+		newBalance := utils.RoundToTwoDecimals(acc.Balance + delta)
+		if err := tx.Model(&acc).Update("balance", newBalance).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+

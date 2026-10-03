@@ -65,7 +65,8 @@ func TransactionsHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		// ✅ PERF: Redis cache — serve cached response if available (2-min TTL)
-		cacheKey := utils.BuildCacheKey("transactions", userID, r.URL.RawQuery)
+		sortedQuery := r.URL.Query().Encode()
+		cacheKey := utils.BuildCacheKey("transactions", userID, sortedQuery)
 		var cachedResponse TransactionsListResponse
 		if err := utils.CacheGet(cacheKey, &cachedResponse); err == nil {
 			for i := range cachedResponse.Transactions {
@@ -308,13 +309,26 @@ func TransactionsHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Adjust balances for each transaction (reversing their effects)
+		// Adjust balances in bulk (reversing their effects)
+		adjustments := make(map[string]float64)
 		for _, transaction := range transactions {
-			if err := services.AdjustBalances(tx, userID, transaction.AccountID, transaction.TransferToID, transaction.Type, transaction.Amount, transaction.AdminFee, -1); err != nil {
-				tx.Rollback()
-				utils.HandleDBError(w, err, "update balances during deletion")
-				return
+			switch transaction.Type {
+			case database.TransactionTypeIncome:
+				adjustments[transaction.AccountID] -= transaction.Amount - transaction.AdminFee
+			case database.TransactionTypeExpense:
+				adjustments[transaction.AccountID] += transaction.Amount + transaction.AdminFee
+			case database.TransactionTypeTransfer:
+				if transaction.TransferToID != nil && *transaction.TransferToID != "" {
+					adjustments[transaction.AccountID] += transaction.Amount + transaction.AdminFee
+					adjustments[*transaction.TransferToID] -= transaction.Amount
+				}
 			}
+		}
+
+		if err := services.AdjustBalancesBulk(tx, userID, adjustments); err != nil {
+			tx.Rollback()
+			utils.HandleDBError(w, err, "update balances during deletion")
+			return
 		}
 
 		// Perform bulk deletion
@@ -380,13 +394,26 @@ func BulkRestoreTransactionsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Reapply balance effects
+	// Reapply balance effects in bulk
+	adjustments := make(map[string]float64)
 	for _, transaction := range transactions {
-		if err := services.AdjustBalances(tx, userID, transaction.AccountID, transaction.TransferToID, transaction.Type, transaction.Amount, transaction.AdminFee, 1); err != nil {
-			tx.Rollback()
-			utils.HandleDBError(w, err, "update balances during restore")
-			return
+		switch transaction.Type {
+		case database.TransactionTypeIncome:
+			adjustments[transaction.AccountID] += transaction.Amount - transaction.AdminFee
+		case database.TransactionTypeExpense:
+			adjustments[transaction.AccountID] -= transaction.Amount + transaction.AdminFee
+		case database.TransactionTypeTransfer:
+			if transaction.TransferToID != nil && *transaction.TransferToID != "" {
+				adjustments[transaction.AccountID] -= transaction.Amount + transaction.AdminFee
+				adjustments[*transaction.TransferToID] += transaction.Amount
+			}
 		}
+	}
+
+	if err := services.AdjustBalancesBulk(tx, userID, adjustments); err != nil {
+		tx.Rollback()
+		utils.HandleDBError(w, err, "update balances during restore")
+		return
 	}
 
 	// Restore records
@@ -457,22 +484,27 @@ func BulkEditTransactionsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	for _, transaction := range transactions {
+	adjustments := make(map[string]float64)
+	for i := range transactions {
+		transaction := &transactions[i]
 		updated := false
 
 		// 1. Bulk edit account and adjust balances
 		if req.AccountID != "" && req.AccountID != transaction.AccountID {
-			// Roll back old account balance
-			if err := services.AdjustBalances(tx, userID, transaction.AccountID, transaction.TransferToID, transaction.Type, transaction.Amount, transaction.AdminFee, -1); err != nil {
-				tx.Rollback()
-				utils.HandleDBError(w, err, "rollback balance for old account")
-				return
-			}
-			// Apply new account balance
-			if err := services.AdjustBalances(tx, userID, req.AccountID, transaction.TransferToID, transaction.Type, transaction.Amount, transaction.AdminFee, 1); err != nil {
-				tx.Rollback()
-				utils.HandleDBError(w, err, "apply balance for new account")
-				return
+			// Roll back old account balance delta (reversing the transaction's effect)
+			// Apply new account balance delta (applying the transaction's effect to the new account)
+			switch transaction.Type {
+			case database.TransactionTypeIncome:
+				adjustments[transaction.AccountID] -= transaction.Amount - transaction.AdminFee
+				adjustments[req.AccountID] += transaction.Amount - transaction.AdminFee
+			case database.TransactionTypeExpense:
+				adjustments[transaction.AccountID] += transaction.Amount + transaction.AdminFee
+				adjustments[req.AccountID] -= transaction.Amount + transaction.AdminFee
+			case database.TransactionTypeTransfer:
+				if transaction.TransferToID != nil && *transaction.TransferToID != "" {
+					adjustments[transaction.AccountID] += transaction.Amount + transaction.AdminFee
+					adjustments[req.AccountID] -= transaction.Amount + transaction.AdminFee
+				}
 			}
 			transaction.AccountID = req.AccountID
 			updated = true
@@ -490,12 +522,19 @@ func BulkEditTransactionsHandler(w http.ResponseWriter, r *http.Request) {
 
 		if updated {
 			transaction.UpdatedAt = time.Now()
-			if err := tx.Save(&transaction).Error; err != nil {
+			if err := tx.Save(transaction).Error; err != nil {
 				tx.Rollback()
 				utils.HandleDBError(w, err, "save updated transaction")
 				return
 			}
 		}
+	}
+
+	// Reconcile balance shifts in bulk
+	if err := services.AdjustBalancesBulk(tx, userID, adjustments); err != nil {
+		tx.Rollback()
+		utils.HandleDBError(w, err, "reconcile balance shifts")
+		return
 	}
 
 	if err := tx.Commit().Error; err != nil {

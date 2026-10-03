@@ -145,29 +145,15 @@ func CacheDeletePatternsPipelined(patterns []string) error {
 		return nil
 	}
 
-	pipe := RedisClient.Pipeline()
-
-	// Stage all SCAN commands in the pipeline
-	type scanCmd struct {
-		iter *redis.ScanCmd
-	}
-	var cmds []scanCmd
-	for _, pattern := range patterns {
-		cmd := pipe.Scan(ctx, 0, pattern, 100)
-		cmds = append(cmds, scanCmd{iter: cmd})
-	}
-
-	// Execute pipeline (1 round-trip for all SCANs)
-	_, err := pipe.Exec(ctx)
-	if err != nil && err != redis.Nil {
-		return err
-	}
-
-	// Collect all keys from scan results
 	var allKeys []string
-	for _, cmd := range cmds {
-		keys, _, _ := cmd.iter.Result()
-		allKeys = append(allKeys, keys...)
+	for _, pattern := range patterns {
+		iter := RedisClient.Scan(ctx, 0, pattern, 0).Iterator()
+		for iter.Next(ctx) {
+			allKeys = append(allKeys, iter.Val())
+		}
+		if err := iter.Err(); err != nil {
+			return err
+		}
 	}
 
 	// Delete all collected keys in a single pipeline batch
@@ -176,10 +162,11 @@ func CacheDeletePatternsPipelined(patterns []string) error {
 		for _, key := range allKeys {
 			delPipe.Del(ctx, key)
 		}
-		_, err = delPipe.Exec(ctx)
+		_, err := delPipe.Exec(ctx)
+		return err
 	}
 
-	return err
+	return nil
 }
 
 // CacheInvalidateUser invalidates all cache entries for a specific user

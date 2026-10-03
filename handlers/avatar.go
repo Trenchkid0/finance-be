@@ -1,18 +1,24 @@
 package handlers
 
 import (
+	"bytes"
 	"fmt"
+	"image"
+	"image/jpeg"
+	"image/png"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 
+	xwebp "golang.org/x/image/webp"
+
 	"maybe-finance-backend/middleware"
 	"maybe-finance-backend/utils"
 )
 
-// UploadAvatarHandler handles user avatar image uploads (saved directly as WebP)
+// UploadAvatarHandler handles user avatar image uploads (decoded & re-encoded safely)
 func UploadAvatarHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		utils.HandleMethodNotAllowed(w)
@@ -59,6 +65,24 @@ func UploadAvatarHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Decode image safely
+	var img image.Image
+	var decodeErr error
+	if strings.Contains(detectedType, "jpeg") || strings.Contains(detectedType, "jpg") {
+		img, decodeErr = jpeg.Decode(bytes.NewReader(fileBytes))
+	} else if strings.Contains(detectedType, "png") {
+		img, decodeErr = png.Decode(bytes.NewReader(fileBytes))
+	} else if strings.Contains(detectedType, "webp") {
+		img, decodeErr = xwebp.Decode(bytes.NewReader(fileBytes))
+	} else {
+		img, _, decodeErr = image.Decode(bytes.NewReader(fileBytes))
+	}
+
+	if decodeErr != nil {
+		utils.HandleBadRequest(w, "Failed to decode image file")
+		return
+	}
+
 	// Create upload directory if not exists
 	avatarDir := "uploads/avatars"
 	if err := os.MkdirAll(avatarDir, 0755); err != nil {
@@ -66,13 +90,19 @@ func UploadAvatarHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generate unique filename. Since the client exports WebP, save as .webp.
-	filename := generateUniqueFilename(userID) + ".webp"
+	// Generate unique filename with platform-supported extension
+	filename := generateUniqueFilename(userID) + getImageExtension()
 	filePath := filepath.Join(avatarDir, filename)
 
-	// Write file directly to disk
-	if err := os.WriteFile(filePath, fileBytes, 0644); err != nil {
-		utils.HandleDBError(w, err, "save avatar file")
+	outputFile, err := os.Create(filePath)
+	if err != nil {
+		utils.HandleDBError(w, err, "create avatar file")
+		return
+	}
+	defer outputFile.Close()
+
+	if _, err := encodeImage(outputFile, img); err != nil {
+		utils.HandleDBError(w, err, "encode avatar image")
 		return
 	}
 

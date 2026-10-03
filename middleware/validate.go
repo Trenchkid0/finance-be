@@ -50,6 +50,9 @@ func Validate(v interface{}) []string {
 				if fVal.Kind() == reflect.Int && float64(fVal.Int()) < n {
 					errs = append(errs, fmt.Sprintf("%s must be at least %v", jsonName(field), n))
 				}
+				if fVal.Kind() == reflect.String && float64(len(fVal.String())) < n {
+					errs = append(errs, fmt.Sprintf("%s must be at least %v characters", jsonName(field), n))
+				}
 
 			case strings.HasPrefix(rule, "max="):
 				n, _ := strconv.ParseFloat(strings.TrimPrefix(rule, "max="), 64)
@@ -58,6 +61,9 @@ func Validate(v interface{}) []string {
 				}
 				if fVal.Kind() == reflect.Int && float64(fVal.Int()) > n {
 					errs = append(errs, fmt.Sprintf("%s must be at most %v", jsonName(field), n))
+				}
+				if fVal.Kind() == reflect.String && float64(len(fVal.String())) > n {
+					errs = append(errs, fmt.Sprintf("%s must be at most %v characters", jsonName(field), n))
 				}
 
 			case rule == "email":

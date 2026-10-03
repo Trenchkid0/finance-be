@@ -67,6 +67,7 @@ func BulkCreateTransactionsHandler(w http.ResponseWriter, r *http.Request) {
 	tx := database.DB.Begin()
 	var batchTx []database.Transaction
 	now := time.Now()
+	adjustments := make(map[string]float64)
 
 	for i, item := range req.Transactions {
 		// Verify account ownership
@@ -98,11 +99,20 @@ func BulkCreateTransactionsHandler(w http.ResponseWriter, r *http.Request) {
 			adminFee = *item.AdminFee
 		}
 
-		// Adjust Balance for this transaction
-		if err := services.AdjustBalances(tx, userID, item.AccountID, item.TransferToID, item.Type, item.Amount, adminFee, 1); err != nil {
-			tx.Rollback()
-			utils.HandleBadRequest(w, fmt.Sprintf("Transaksi ke-%d: Gagal menyesuaikan saldo: %v", i+1, err))
-			return
+		// Accumulate balance adjustments
+		switch item.Type {
+		case database.TransactionTypeIncome:
+			adjustments[item.AccountID] += item.Amount - adminFee
+		case database.TransactionTypeExpense:
+			adjustments[item.AccountID] -= item.Amount + adminFee
+		case database.TransactionTypeTransfer:
+			if item.TransferToID == nil || *item.TransferToID == "" {
+				tx.Rollback()
+				utils.HandleBadRequest(w, fmt.Sprintf("Transaksi ke-%d: Akun tujuan transfer tidak valid.", i+1))
+				return
+			}
+			adjustments[item.AccountID] -= item.Amount + adminFee
+			adjustments[*item.TransferToID] += item.Amount
 		}
 
 		transaction := database.Transaction{
@@ -121,6 +131,13 @@ func BulkCreateTransactionsHandler(w http.ResponseWriter, r *http.Request) {
 			UpdatedAt:       now,
 		}
 		batchTx = append(batchTx, transaction)
+	}
+
+	// Reconcile balance in bulk
+	if err := services.AdjustBalancesBulk(tx, userID, adjustments); err != nil {
+		tx.Rollback()
+		utils.HandleBadRequest(w, fmt.Sprintf("Gagal menyesuaikan saldo: %v", err))
+		return
 	}
 
 	// Batch insert all transactions

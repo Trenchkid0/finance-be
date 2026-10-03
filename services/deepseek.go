@@ -37,6 +37,10 @@ type ChatResponse struct {
 	Choices []Choice `json:"choices"`
 }
 
+var deepSeekClient = &http.Client{
+	Timeout: 30 * time.Second,
+}
+
 // DeepSeekJSON calls the DeepSeek chat completion API in JSON mode and parses the response.
 func DeepSeekJSON(ctx context.Context, systemPrompt, userPrompt string, target interface{}) error {
 	apiKey := os.Getenv("DEEPSEEK_API_KEY")
@@ -59,10 +63,6 @@ func DeepSeekJSON(ctx context.Context, systemPrompt, userPrompt string, target i
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-	}
-
 	url := fmt.Sprintf("%s/chat/completions", DeepSeekBaseURL)
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonBytes))
 	if err != nil {
@@ -72,7 +72,7 @@ func DeepSeekJSON(ctx context.Context, systemPrompt, userPrompt string, target i
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
 
-	resp, err := client.Do(req)
+	resp, err := deepSeekClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("gagal menghubungi layanan AI: %w", err)
 	}

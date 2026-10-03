@@ -23,6 +23,9 @@ type PreferencesData struct {
 	NotificationSettings map[string]interface{} `json:"notificationSettings"`
 	Language             string                 `json:"language"`
 	DashboardLayout      string                 `json:"dashboardLayout"`
+	BaseCurrency         string                 `json:"baseCurrency"`
+	OnboardingCompleted  bool                   `json:"onboardingCompleted"`
+	AccountOrder         []string               `json:"accountOrder,omitempty"`
 }
 
 // defaultPreferences returns the default preferences for new users.
@@ -56,8 +59,10 @@ func defaultPreferences() PreferencesData {
 			"duration": 4000,
 			"expand":   false,
 		},
-		Language: "id",
-		DashboardLayout: "default",
+		Language:            "id",
+		DashboardLayout:     "default",
+		BaseCurrency:        "IDR",
+		OnboardingCompleted: false,
 	}
 }
 
@@ -94,15 +99,37 @@ func getPreferences(w http.ResponseWriter, userID string) {
 	fetchFunc := func() (PreferencesData, error) {
 		var pref database.UserPreference
 		if err := database.DB.Where("user_id = ?", userID).First(&pref).Error; err != nil {
-			// No row yet — return defaults
-			return defaultPreferences(), nil
+			// No preference row yet — check if user already has existing accounts
+			defaults := defaultPreferences()
+			var accCount int64
+			database.DB.Model(&database.FinanceAccount{}).Where("user_id = ?", userID).Count(&accCount)
+			if accCount > 0 {
+				defaults.OnboardingCompleted = true
+			}
+			return defaults, nil
 		}
+
+		var rawMap map[string]interface{}
+		_ = json.Unmarshal([]byte(pref.Data), &rawMap)
 
 		var data PreferencesData
 		if err := json.Unmarshal([]byte(pref.Data), &data); err != nil {
 			utils.Log.Warn().Err(err).Str("user_id", userID).Msg("Failed to parse preferences JSON, returning defaults")
 			return defaultPreferences(), nil
 		}
+
+		// If onboardingCompleted key was missing from JSON (legacy user record),
+		// OR if user already has accounts created, set OnboardingCompleted = true
+		if _, hasField := rawMap["onboardingCompleted"]; !hasField {
+			data.OnboardingCompleted = true
+		} else if !data.OnboardingCompleted {
+			var accCount int64
+			database.DB.Model(&database.FinanceAccount{}).Where("user_id = ?", userID).Count(&accCount)
+			if accCount > 0 {
+				data.OnboardingCompleted = true
+			}
+		}
+
 		return data, nil
 	}
 

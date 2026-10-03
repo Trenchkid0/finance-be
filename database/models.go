@@ -70,9 +70,9 @@ type FinanceAccount struct {
 // Category represents transaction categories.
 type Category struct {
 	ID            string       `gorm:"primaryKey;type:varchar(191)" json:"id"`
-	UserID        *string      `gorm:"index;type:varchar(191)" json:"userId"` // Nullable for global defaults
-	Name          string       `gorm:"type:varchar(191);not null" json:"name"`
-	Type          CategoryType `gorm:"type:varchar(50);not null" json:"type"`
+	UserID        *string      `gorm:"index;index:idx_user_type_name;type:varchar(191)" json:"userId"` // Nullable for global defaults
+	Name          string       `gorm:"index:idx_user_type_name;type:varchar(191);not null" json:"name"`
+	Type          CategoryType `gorm:"index:idx_user_type_name;type:varchar(50);not null" json:"type"`
 	Icon          string       `gorm:"type:varchar(100)" json:"icon"`
 	Color         string       `gorm:"type:varchar(50)" json:"color"`
 	IsDefault     bool         `gorm:"default:false;not null" json:"isDefault"`
@@ -113,8 +113,8 @@ type Transaction struct {
 	AdminFee        float64         `gorm:"type:decimal(15,2);default:0;not null" json:"adminFee"`
 	Description     string          `gorm:"type:varchar(191)" json:"description"`
 	Note            string          `gorm:"type:text" json:"note"`
-	Date            time.Time       `gorm:"index;index:idx_user_date;not null" json:"date"`
-	TransferToID    *string         `gorm:"type:varchar(191)" json:"transferToId"` // ID of target account if transfer
+	Date            time.Time       `gorm:"index;index:idx_user_date;index:idx_user_type_date;not null" json:"date"`
+	TransferToID    *string         `gorm:"index;type:varchar(191)" json:"transferToId"` // ID of target account if transfer
 	ReceiptImageURL *string         `gorm:"type:text" json:"receiptImageUrl"`       // URL foto struk/receipt
 	TaxDeductible   bool            `gorm:"default:false;not null" json:"taxDeductible"`
 
