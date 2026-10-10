@@ -26,6 +26,7 @@ type PreferencesData struct {
 	BaseCurrency         string                 `json:"baseCurrency"`
 	OnboardingCompleted  bool                   `json:"onboardingCompleted"`
 	AccountOrder         []string               `json:"accountOrder,omitempty"`
+	CursorSettings       map[string]interface{} `json:"cursorSettings,omitempty"`
 }
 
 // defaultPreferences returns the default preferences for new users.
@@ -63,6 +64,11 @@ func defaultPreferences() PreferencesData {
 		DashboardLayout:     "default",
 		BaseCurrency:        "IDR",
 		OnboardingCompleted: false,
+		CursorSettings: map[string]interface{}{
+			"type":  "macos-pointer",
+			"color": "accent",
+			"size":  "default",
+		},
 	}
 }
 
@@ -128,6 +134,10 @@ func getPreferences(w http.ResponseWriter, userID string) {
 			if accCount > 0 {
 				data.OnboardingCompleted = true
 			}
+		}
+
+		if data.CursorSettings == nil {
+			data.CursorSettings = defaultPreferences().CursorSettings
 		}
 
 		return data, nil
