@@ -18,6 +18,7 @@ import (
 	"maybe-finance-backend/database"
 	"maybe-finance-backend/handlers"
 	"maybe-finance-backend/middleware"
+	"maybe-finance-backend/services"
 	"maybe-finance-backend/utils"
 )
 
@@ -63,6 +64,11 @@ func main() {
 	reminderCtx, reminderCancel := context.WithCancel(context.Background())
 	defer reminderCancel()
 	startReminderScheduler(reminderCtx)
+
+	// Start Bank Email IMAP Sync background scheduler
+	emailSyncCtx, emailSyncCancel := context.WithCancel(context.Background())
+	defer emailSyncCancel()
+	startEmailSyncScheduler(emailSyncCtx)
 
 	// 4. Setup router
 	mux := http.NewServeMux()
@@ -177,6 +183,14 @@ func main() {
 	// Auto-Pay History route
 	secureRoute("GET /api/recurring/auto-pay-history", handlers.AutoPayHistoryHandler)
 
+	// Bank Email Sync (IMAP) routes
+	secureRoute("GET /api/email-sync", handlers.GetEmailSyncConfigHandler)
+	secureRoute("POST /api/email-sync", handlers.SaveEmailSyncConfigHandler)
+	secureRoute("POST /api/email-sync/test", handlers.TestEmailSyncHandler)
+	secureRoute("POST /api/email-sync/sync", handlers.TriggerEmailSyncHandler)
+	secureRoute("POST /api/email-sync/reset", handlers.ResetEmailSyncHistoryHandler)
+	secureRoute("DELETE /api/email-sync", handlers.DeleteEmailSyncHandler)
+
 	// Telegram Bot Webhook (public - called by Telegram servers)
 	mux.HandleFunc("POST /webhook/telegram", handlers.TelegramWebhookHandler)
 
@@ -234,6 +248,7 @@ func main() {
 		// Cancel scheduler contexts
 		autoPayCancel()
 		reminderCancel()
+		emailSyncCancel()
 
 		// Give outstanding requests 10 seconds to complete
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -305,10 +320,10 @@ func isLocalNetworkOrigin(origin string) bool {
 	}
 
 	// Check private network patterns (IPv4)
-	if strings.HasPrefix(host, "192.168.") {
+	if strings.HasPrefix(host, "192.168.") || strings.HasPrefix(host, "10.") || strings.HasPrefix(host, "100.") {
 		return true
 	}
-	if strings.HasPrefix(host, "100.") {
+	if strings.HasSuffix(host, ".local") || strings.HasSuffix(host, ".lan") || strings.HasSuffix(host, ".ts.net") || host == "devmon" {
 		return true
 	}
 	if strings.HasPrefix(host, "172.") {
@@ -562,4 +577,56 @@ func startReminderScheduler(ctx context.Context) {
 			}
 		}
 	}()
+}
+
+func startEmailSyncScheduler(ctx context.Context) {
+	utils.Log.Info().Msg("Bank Email IMAP background sync scheduler started")
+
+	// Initial sync after 30 seconds of server startup
+	go func() {
+		select {
+		case <-time.After(30 * time.Second):
+			runActiveEmailSyncs()
+		case <-ctx.Done():
+			return
+		}
+	}()
+
+	ticker := time.NewTicker(5 * time.Minute)
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				ticker.Stop()
+				utils.Log.Info().Msg("Bank Email sync scheduler stopped")
+				return
+			case <-ticker.C:
+				runActiveEmailSyncs()
+			}
+		}
+	}()
+}
+
+func runActiveEmailSyncs() {
+	var activeConfigs []database.EmailSyncConfig
+	if err := database.DB.Where("is_enabled = ?", true).Find(&activeConfigs).Error; err != nil {
+		return
+	}
+
+	for _, cfg := range activeConfigs {
+		func(c database.EmailSyncConfig) {
+			defer func() {
+				if r := recover(); r != nil {
+					utils.Log.Error().Interface("panic", r).Str("user_id", c.UserID).Msg("Recovered panic in EmailSyncScheduler")
+				}
+			}()
+
+			count, err := services.SyncUserEmails(c.UserID, services.EmailSyncOptions{Days: 30})
+			if err != nil {
+				utils.Log.Warn().Err(err).Str("email", c.Email).Msg("[EmailSync] Background sync failed")
+			} else if count > 0 {
+				utils.Log.Info().Int("imported", count).Str("email", c.Email).Msg("[EmailSync] Imported new transactions from bank email")
+			}
+		}(cfg)
+	}
 }

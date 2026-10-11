@@ -11,16 +11,21 @@ if "%1"=="" (
 )
 
 echo ========================================================
-echo Compiling Linux Binary (racks-backend)
+echo Compiling Linux Binary [racks-backend]
 echo Target: GOOS=%GOOS% ^| GOARCH=%GOARCH%
 echo ========================================================
 
 go build -ldflags="-w -s" -o racks-backend main.go
-if %ERRORLEVEL% equ 0 (
-    echo.
-    echo [BERHASIL] Binary 'racks-backend' (Linux %GOARCH%) berhasil dibuat!
-    echo Siap di-commit dan di-push ke Git!
-) else (
-    echo.
-    echo [GAGAL] Build gagal dengan code %ERRORLEVEL%!
-)
+if %ERRORLEVEL% equ 0 goto success
+goto failure
+
+:success
+echo.
+echo [BERHASIL] Binary racks-backend [Linux %GOARCH%] berhasil dibuat!
+echo Siap di-commit dan di-push ke Git!
+exit /b 0
+
+:failure
+echo.
+echo [GAGAL] Build gagal dengan code %ERRORLEVEL%!
+exit /b %ERRORLEVEL%

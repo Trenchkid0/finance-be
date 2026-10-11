@@ -211,6 +211,35 @@ type UserPreference struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
+// EmailSyncConfig stores user IMAP email sync credentials and settings
+type EmailSyncConfig struct {
+	ID               string          `gorm:"primaryKey;type:varchar(191)" json:"id"`
+	UserID           string          `gorm:"uniqueIndex;type:varchar(191);not null" json:"userId"`
+	Email            string          `gorm:"type:varchar(191);not null" json:"email"`
+	AppPassword      string          `gorm:"type:varchar(255);not null" json:"-"` // Hidden from JSON response
+	IMAPServer       string          `gorm:"type:varchar(191);default:'imap.gmail.com:993';not null" json:"imapServer"`
+	DefaultAccountID *string         `gorm:"type:varchar(191)" json:"defaultAccountId"`
+	DefaultAccount   *FinanceAccount `gorm:"foreignKey:DefaultAccountID" json:"defaultAccount,omitempty"`
+	IsEnabled        bool            `gorm:"default:true;not null" json:"isEnabled"`
+	LastSyncedAt     *time.Time      `json:"lastSyncedAt,omitempty"`
+	LastSyncStatus   string          `gorm:"type:varchar(50);default:'idle'" json:"lastSyncStatus"` // "idle", "success", "failed", "syncing"
+	LastSyncError    string          `gorm:"type:text" json:"lastSyncError,omitempty"`
+	TotalParsed      int             `gorm:"default:0;not null" json:"totalParsed"`
+	CreatedAt        time.Time       `json:"createdAt"`
+	UpdatedAt        time.Time       `json:"updatedAt"`
+}
+
+// ProcessedEmail stores record of already imported transaction emails to prevent duplicate parsing
+type ProcessedEmail struct {
+	ID        string    `gorm:"primaryKey;type:varchar(191)" json:"id"`
+	UserID    string    `gorm:"index:idx_user_msgid;type:varchar(191);not null" json:"userId"`
+	MessageID string    `gorm:"index:idx_user_msgid;type:varchar(255);not null" json:"messageId"`
+	Subject   string    `gorm:"type:varchar(255)" json:"subject"`
+	Sender    string    `gorm:"type:varchar(255)" json:"sender"`
+	Amount    float64   `gorm:"type:decimal(15,2)" json:"amount"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
 
 
 
