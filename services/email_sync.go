@@ -183,34 +183,156 @@ func SyncUserEmails(userID string, opts EmailSyncOptions) (int, error) {
 }
 
 func processUIDMessages(c *client.Client, seqset *imap.SeqSet, userID string, cfg *database.EmailSyncConfig, opts EmailSyncOptions) (int, error) {
+	// Pre-load all processed email MessageIDs in a single fast query (eliminates N+1 DB queries)
+	var existingIDs []string
+	database.DB.Model(&database.ProcessedEmail{}).
+		Where("user_id = ?", userID).
+		Pluck("message_id", &existingIDs)
+	processedMap := make(map[string]bool, len(existingIDs))
+	for _, id := range existingIDs {
+		processedMap[id] = true
+	}
+
+	// PHASE 1: Fetch lightweight envelopes only (~50 KB vs ~20 MB full bodies)
+	headerItems := []imap.FetchItem{imap.FetchEnvelope, imap.FetchInternalDate, imap.FetchUid}
+	headerChan := make(chan *imap.Message, 50)
+	headerDone := make(chan error, 1)
+
+	go func() {
+		headerDone <- c.UidFetch(seqset, headerItems, headerChan)
+	}()
+
+	relevantUIDs := new(imap.SeqSet)
+	for msg := range headerChan {
+		if msg == nil || msg.Envelope == nil {
+			continue
+		}
+
+		msgID := msg.Envelope.MessageId
+		if msgID == "" {
+			msgID = fmt.Sprintf("msg_%s_%d", msg.Envelope.Subject, msg.InternalDate.Unix())
+		}
+
+		// Skip if already parsed
+		if processedMap[msgID] {
+			continue
+		}
+
+		// Skip if not financial sender/subject
+		sender := ""
+		if len(msg.Envelope.From) > 0 {
+			sender = strings.ToLower(msg.Envelope.From[0].Address())
+		}
+		if !isFinancialEmail(sender, msg.Envelope.Subject) {
+			continue
+		}
+
+		relevantUIDs.AddNum(msg.Uid)
+	}
+
+	if err := <-headerDone; err != nil {
+		utils.Log.Warn().Err(err).Msg("IMAP UID header fetch warning")
+	}
+
+	// If no new financial emails found, exit immediately without downloading any body
+	if relevantUIDs.Empty() {
+		now := time.Now()
+		database.DB.Model(cfg).Updates(map[string]interface{}{
+			"last_sync_status": "success",
+			"last_synced_at":   &now,
+			"last_sync_error":  "",
+		})
+		return 0, nil
+	}
+
+	// PHASE 2: Download full RFC822 bodies ONLY for the relevant financial emails
 	section := &imap.BodySectionName{}
 	items := []imap.FetchItem{imap.FetchEnvelope, imap.FetchFlags, imap.FetchInternalDate, section.FetchItem()}
 
-	messages := make(chan *imap.Message, 40)
+	messages := make(chan *imap.Message, 20)
 	done := make(chan error, 1)
 
 	go func() {
-		done <- c.UidFetch(seqset, items, messages)
+		done <- c.UidFetch(relevantUIDs, items, messages)
 	}()
 
-	return consumeAndParseMessages(messages, done, userID, cfg, opts)
+	return consumeAndParseMessages(messages, done, userID, cfg, opts, processedMap)
 }
 
 func processSeqMessages(c *client.Client, seqset *imap.SeqSet, userID string, cfg *database.EmailSyncConfig, opts EmailSyncOptions) (int, error) {
+	var existingIDs []string
+	database.DB.Model(&database.ProcessedEmail{}).
+		Where("user_id = ?", userID).
+		Pluck("message_id", &existingIDs)
+	processedMap := make(map[string]bool, len(existingIDs))
+	for _, id := range existingIDs {
+		processedMap[id] = true
+	}
+
+	// PHASE 1: Fetch lightweight envelopes only
+	headerItems := []imap.FetchItem{imap.FetchEnvelope, imap.FetchInternalDate}
+	headerChan := make(chan *imap.Message, 50)
+	headerDone := make(chan error, 1)
+
+	go func() {
+		headerDone <- c.Fetch(seqset, headerItems, headerChan)
+	}()
+
+	relevantSeqs := new(imap.SeqSet)
+	for msg := range headerChan {
+		if msg == nil || msg.Envelope == nil {
+			continue
+		}
+
+		msgID := msg.Envelope.MessageId
+		if msgID == "" {
+			msgID = fmt.Sprintf("msg_%s_%d", msg.Envelope.Subject, msg.InternalDate.Unix())
+		}
+
+		if processedMap[msgID] {
+			continue
+		}
+
+		sender := ""
+		if len(msg.Envelope.From) > 0 {
+			sender = strings.ToLower(msg.Envelope.From[0].Address())
+		}
+		if !isFinancialEmail(sender, msg.Envelope.Subject) {
+			continue
+		}
+
+		relevantSeqs.AddNum(msg.SeqNum)
+	}
+
+	if err := <-headerDone; err != nil {
+		utils.Log.Warn().Err(err).Msg("IMAP Seq header fetch warning")
+	}
+
+	if relevantSeqs.Empty() {
+		now := time.Now()
+		database.DB.Model(cfg).Updates(map[string]interface{}{
+			"last_sync_status": "success",
+			"last_synced_at":   &now,
+			"last_sync_error":  "",
+		})
+		return 0, nil
+	}
+
+	// PHASE 2: Download full RFC822 bodies only for the relevant emails
 	section := &imap.BodySectionName{}
 	items := []imap.FetchItem{imap.FetchEnvelope, imap.FetchFlags, imap.FetchInternalDate, section.FetchItem()}
 
-	messages := make(chan *imap.Message, 40)
+	messages := make(chan *imap.Message, 20)
 	done := make(chan error, 1)
 
 	go func() {
-		done <- c.Fetch(seqset, items, messages)
+		done <- c.Fetch(relevantSeqs, items, messages)
 	}()
 
-	return consumeAndParseMessages(messages, done, userID, cfg, opts)
+	return consumeAndParseMessages(messages, done, userID, cfg, opts, processedMap)
 }
 
-func consumeAndParseMessages(messages chan *imap.Message, done chan error, userID string, cfg *database.EmailSyncConfig, opts EmailSyncOptions) (int, error) {
+func consumeAndParseMessages(messages chan *imap.Message, done chan error, userID string, cfg *database.EmailSyncConfig, opts EmailSyncOptions, processedMap map[string]bool) (int, error) {
 	importedCount := 0
 
 	// Pre-load user accounts and categories for auto-matching
@@ -230,12 +352,8 @@ func consumeAndParseMessages(messages chan *imap.Message, done chan error, userI
 			msgID = fmt.Sprintf("msg_%s_%d", msg.Envelope.Subject, msg.InternalDate.Unix())
 		}
 
-		// 1. Idempotency check: has this email already been parsed?
-		var exists int64
-		database.DB.Model(&database.ProcessedEmail{}).
-			Where("user_id = ? AND message_id = ?", userID, msgID).
-			Count(&exists)
-		if exists > 0 {
+		// 1. Fast O(1) in-memory check (no DB roundtrip)
+		if processedMap[msgID] {
 			continue
 		}
 
@@ -380,11 +498,17 @@ func consumeAndParseMessages(messages chan *imap.Message, done chan error, userI
 
 		if err == nil {
 			importedCount++
+			processedMap[parsed.MessageID] = true
 		}
 	}
 
 	if err := <-done; err != nil {
 		utils.Log.Warn().Err(err).Msg("IMAP fetch finished with error")
+	}
+
+	// Invalidate user cache so frontend dashboard/transactions/summary updates immediately
+	if importedCount > 0 {
+		_ = utils.CacheInvalidateUser(userID)
 	}
 
 	// Update config summary
