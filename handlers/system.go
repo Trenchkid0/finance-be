@@ -239,6 +239,15 @@ func SystemHealthHandler(w http.ResponseWriter, r *http.Request) {
 			"memTotalAlloc": float64(m.TotalAlloc) / (1024 * 1024),
 			"memSysMb":      float64(m.Sys) / (1024 * 1024),
 		},
+		"apis": []map[string]interface{}{
+			{"name": "Auth API", "path": "/api/auth/login", "method": "POST", "status": "UP"},
+			{"name": "Transactions API", "path": "/api/transactions", "method": "GET/POST", "status": dbStatus},
+			{"name": "Accounts API", "path": "/api/accounts", "method": "GET/POST", "status": dbStatus},
+			{"name": "Budgets API", "path": "/api/budgets", "method": "GET/POST", "status": dbStatus},
+			{"name": "Subscriptions API", "path": "/api/subscriptions", "method": "GET/POST", "status": dbStatus},
+			{"name": "Analytics Summary", "path": "/api/analytics/summary", "method": "GET", "status": dbStatus},
+			{"name": "Telegram Webhook", "path": "/webhook/telegram", "method": "POST", "status": "UP"},
+		},
 	}
 
 	// Overall status degradation check
